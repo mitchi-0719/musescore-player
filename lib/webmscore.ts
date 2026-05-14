@@ -126,6 +126,8 @@ export async function convertMsczToMusicXml(
     // 試行1: Uint8Array, doLayout=true
     try {
       console.log('WebMscore: trying load as Uint8Array (doLayout=true)')
+      const firstTry = new Uint8Array(uint8.length)
+      firstTry.set(uint8)
       score = await WebMscore.load('mscz', firstTry, [], true)
     } catch (firstErr) {
       console.warn('WebMscore load (doLayout=true) failed:', firstErr)
@@ -133,6 +135,8 @@ export async function convertMsczToMusicXml(
       // 試行2: Uint8Array, doLayout=false
       try {
         console.log('WebMscore: retry load as Uint8Array (doLayout=false)')
+        const fallbackTry = new Uint8Array(uint8.length)
+        fallbackTry.set(uint8)
         score = await WebMscore.load('mscz', fallbackTry, [], false)
       } catch (secondErr) {
         console.warn('WebMscore load (doLayout=false) failed:', secondErr)
@@ -142,9 +146,11 @@ export async function convertMsczToMusicXml(
           console.log(
             'WebMscore: final retry load as ArrayBuffer (doLayout=false)'
           )
-          const ab = firstTry.buffer.slice(0)
+          // fresh copy from original uint8
+          const tmp = new Uint8Array(uint8.length)
+          tmp.set(uint8)
           // @ts-ignore - 一部実装は ArrayBuffer を受け付ける
-          score = await WebMscore.load('mscz', new Uint8Array(ab), [], false)
+          score = await WebMscore.load('mscz', tmp, [], false)
         } catch (thirdErr) {
           console.error('All WebMscore load attempts failed', {
             firstErr,
