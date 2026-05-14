@@ -36,10 +36,11 @@ async function getWebMscore(): Promise<WebMscoreLib> {
   }
 
   // WebMscore が既に読み込まれているか確認
-  if (window.WebMscore) {
+  const webmscore = window.WebMscore
+  if (webmscore) {
     try {
-      await window.WebMscore.ready
-      return window.WebMscore
+      await webmscore.ready
+      return webmscore
     } catch (err) {
       console.error('WebMscore の初期化に失敗しました:', err)
       throw new Error(
@@ -53,10 +54,11 @@ async function getWebMscore(): Promise<WebMscoreLib> {
   const timeout = 60000
 
   while (Date.now() - startTime < timeout) {
-    if (window.WebMscore) {
+    const webmscore = window.WebMscore
+    if (webmscore) {
       try {
-        await window.WebMscore.ready
-        return window.WebMscore
+        await webmscore.ready
+        return webmscore
       } catch (err) {
         console.error('WebMscore の初期化に失敗しました:', err)
         throw new Error(

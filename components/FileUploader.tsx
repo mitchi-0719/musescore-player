@@ -115,9 +115,6 @@ export default function FileUploader() {
    */
   const loadDemoFile = useCallback(async () => {
     try {
-      setLoading(true)
-      setError(null)
-
       // public/demo.mscz を読み込み
       const response = await fetch('/demo.mscz')
       if (!response.ok) {
@@ -127,13 +124,11 @@ export default function FileUploader() {
       }
 
       const arrayBuffer = await response.arrayBuffer()
-      const binary = new Uint8Array(arrayBuffer)
+      const demoFile = new File([arrayBuffer], 'demo.mscz', {
+        type: 'application/octet-stream',
+      })
 
-      setFileBinary(binary, 'demo.mscz')
-
-      // webmscore で変換
-      const musicXml = await convertMsczToMusicXml(binary)
-      setMusicXml(musicXml)
+      await processFile(demoFile)
 
       console.log('✅ demo.mscz の処理完了')
     } catch (err) {
@@ -142,7 +137,7 @@ export default function FileUploader() {
       console.error('demo.mscz 処理エラー:', message)
       setError(message)
     }
-  }, [setLoading, setError, setFileBinary, setMusicXml])
+  }, [processFile, setError])
 
   return (
     <div className="space-y-6">
