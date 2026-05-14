@@ -90,7 +90,31 @@ export async function convertMsczToMusicXml(
     )
 
     // MSCZ ファイルをロード（doLayout = true で描画も含める）
-    const score = await WebMscore.load('mscz', fileBinary, undefined, true)
+    // Worker に渡す際、Transferable として安全な ArrayBuffer を渡す。
+    const arrayBuffer = fileBinary.buffer.slice(
+      fileBinary.byteOffset,
+      fileBinary.byteOffset + fileBinary.byteLength
+    )
+    const uint8 = new Uint8Array(arrayBuffer)
+    // make two independent copies: firstTry and fallbackTry
+    const firstTry = new Uint8Array(uint8.length)
+    firstTry.set(uint8)
+    const fallbackTry = new Uint8Array(uint8.length)
+    fallbackTry.set(uint8)
+
+    // fonts は未指定より空配列で明示的に渡す（structured clone 周りの問題回避）
+    // まず doLayout=true で試し、失敗した場合は doLayout=false でフォールバックする
+    let score
+    try {
+      score = await WebMscore.load('mscz', firstTry, [], true)
+    } catch (firstErr) {
+      console.warn(
+        'WebMscore load with layout failed, retrying without layout',
+        firstErr
+      )
+      // フォールバック: レイアウトなしで読み込んでみる（メタデータやXMLは取得可能な場合がある）
+      score = await WebMscore.load('mscz', fallbackTry, [], false)
+    }
 
     if (!score) {
       throw new Error('スコアオブジェクトの作成に失敗しました')

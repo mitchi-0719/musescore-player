@@ -9,4 +9,5 @@ tools: [read, edit, browser, todo]
 
 1. 変更されたファイルのコードを確認する。
 2. `.github/copilot-instructions.md` の「Coding Standards」やNext.jsのApp Routerの規約（Client/Server Componentsの分離など）に違反していないかチェックする。
-3. 問題があれば自らコードを修正し、問題がなければ「LGTM」としてオーケストレーターに返す。
+3. ビルドが通るかというのが最低限の基準ですが、コードの品質やプロジェクトの規約に準拠しているかも重要なポイントです。
+4. 問題があれば自らコードを修正し、問題がなければ「LGTM」としてオーケストレーターに返す。
