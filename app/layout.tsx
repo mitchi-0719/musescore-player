@@ -34,7 +34,7 @@ export default function RootLayout({
       <body className="flex min-h-full flex-col">
         {children}
         <Script
-          src="https://cdn.jsdelivr.net/npm/webmscore@1.2.1/webmscore.js"
+          src="https://cdn.jsdelivr.net/npm/webmscore@1.2.0/webmscore.js"
           strategy="beforeInteractive"
         />
         <Script id="patch-webmscore" strategy="afterInteractive">
