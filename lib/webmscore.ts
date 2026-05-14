@@ -104,11 +104,7 @@ export async function convertMsczToMusicXml(
       fileBinary.byteOffset + fileBinary.byteLength
     )
     const uint8 = new Uint8Array(arrayBuffer)
-    // make two independent copies: firstTry and fallbackTry
-    const firstTry = new Uint8Array(uint8.length)
-    firstTry.set(uint8)
-    const fallbackTry = new Uint8Array(uint8.length)
-    fallbackTry.set(uint8)
+    // コピーは各試行の直前に作成する（transfer により ArrayBuffer が切り離されるため）
 
     // fonts は未指定より空配列で明示的に渡す（structured clone 周りの問題回避）
     // まず doLayout=true で試し、失敗した場合は段階的にフォールバックする
