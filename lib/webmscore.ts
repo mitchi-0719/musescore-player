@@ -12,6 +12,7 @@ interface WebMscoreLib {
     fonts?: Uint8Array[],
     doLayout?: boolean
   ) => Promise<WebMscoreInstance>
+  setLogLevel?: (level: number) => Promise<void>
 }
 
 interface WebMscoreInstance {
@@ -85,6 +86,13 @@ export async function convertMsczToMusicXml(
     // WebMscore を取得
     const WebMscore = await getWebMscore()
 
+    // 詳細ログを有効化（worker 内のログレベルを上げる）
+    try {
+      await WebMscore.setLogLevel?.(3)
+    } catch (e) {
+      console.warn('setLogLevel が利用できません:', e)
+    }
+
     console.log(
       `楽譜ファイルを読み込み中... (${(fileBinary.length / 1024).toFixed(1)} KB)`
     )
@@ -103,17 +111,53 @@ export async function convertMsczToMusicXml(
     fallbackTry.set(uint8)
 
     // fonts は未指定より空配列で明示的に渡す（structured clone 周りの問題回避）
-    // まず doLayout=true で試し、失敗した場合は doLayout=false でフォールバックする
+    // まず doLayout=true で試し、失敗した場合は段階的にフォールバックする
+    function hexHead(ua: Uint8Array, n = 8) {
+      return Array.from(ua.slice(0, n))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join(' ')
+    }
+
+    console.log(
+      'convertMsczToMusicXml: bytes=',
+      uint8.length,
+      'head=',
+      hexHead(uint8, 12)
+    )
+
     let score
+
+    // 試行1: Uint8Array, doLayout=true
     try {
+      console.log('WebMscore: trying load as Uint8Array (doLayout=true)')
       score = await WebMscore.load('mscz', firstTry, [], true)
     } catch (firstErr) {
-      console.warn(
-        'WebMscore load with layout failed, retrying without layout',
-        firstErr
-      )
-      // フォールバック: レイアウトなしで読み込んでみる（メタデータやXMLは取得可能な場合がある）
-      score = await WebMscore.load('mscz', fallbackTry, [], false)
+      console.warn('WebMscore load (doLayout=true) failed:', firstErr)
+
+      // 試行2: Uint8Array, doLayout=false
+      try {
+        console.log('WebMscore: retry load as Uint8Array (doLayout=false)')
+        score = await WebMscore.load('mscz', fallbackTry, [], false)
+      } catch (secondErr) {
+        console.warn('WebMscore load (doLayout=false) failed:', secondErr)
+
+        // 試行3: ArrayBuffer を渡してみる（ライブラリが ArrayBuffer を期待している可能性を検証）
+        try {
+          console.log(
+            'WebMscore: final retry load as ArrayBuffer (doLayout=false)'
+          )
+          const ab = firstTry.buffer.slice(0)
+          // @ts-ignore - 一部実装は ArrayBuffer を受け付ける
+          score = await WebMscore.load('mscz', new Uint8Array(ab), [], false)
+        } catch (thirdErr) {
+          console.error('All WebMscore load attempts failed', {
+            firstErr,
+            secondErr,
+            thirdErr,
+          })
+          throw thirdErr
+        }
+      }
     }
 
     if (!score) {
