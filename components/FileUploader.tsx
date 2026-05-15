@@ -5,12 +5,25 @@ import { useCallback, useRef, useState } from 'react'
 import { convertMsczToMusicXml } from '@/lib/webmscore'
 import { useScoreStore } from '@/stores/useScoreStore'
 
+import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
+
 export default function FileUploader() {
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const { setFileBinary, setLoading, setError, setMusicXml, error, isLoading } =
-    useScoreStore()
+  const {
+    setFileBinary,
+    setLoading,
+    setError,
+    setMusicXml,
+    error,
+    isLoading,
+    fileName,
+    musicXml,
+    reset,
+  } = useScoreStore()
+
+  const hasLoadedScore = Boolean(fileName && musicXml && !isLoading)
 
   /**
    * ファイルを処理（MSCZ → MusicXML 変換）
@@ -54,6 +67,7 @@ export default function FileUploader() {
 
         // 結果を格納
         setMusicXml(musicXml)
+        setLoading(false)
 
         console.log(
           `✅ ファイル処理完了: ${file.name} → MusicXML (${(musicXml.length / 1024).toFixed(1)} KB)`
@@ -63,6 +77,7 @@ export default function FileUploader() {
           err instanceof Error ? err.message : '不明なエラーが発生しました'
         console.error('ファイル処理エラー:', message)
         setError(message)
+        setLoading(false)
       }
     },
     [setFileBinary, setLoading, setError, setMusicXml]
@@ -139,79 +154,108 @@ export default function FileUploader() {
     }
   }, [processFile, setError])
 
+  const handleResetScore = useCallback(() => {
+    reset()
+    setIsDragging(false)
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }, [reset])
+
   return (
     <div className="space-y-6">
-      {/* ドラッグ&ドロップエリア */}
-      <div
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        className={`rounded-lg border-2 border-dashed px-8 py-12 text-center transition-colors ${
-          isDragging
-            ? 'border-blue-500 bg-blue-50'
-            : 'border-gray-300 hover:border-blue-400'
-        }`}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".mscz,.mxl,.xml"
-          onChange={handleFileInput}
-          disabled={isLoading}
-          className="hidden"
-        />
-
-        <div className="space-y-4">
-          <div className="text-4xl">🎵</div>
-          <div>
-            <p className="text-lg font-semibold text-gray-700">
-              MSCZ ファイルをドラッグ&ドロップ
-            </p>
-            <p className="mt-2 text-sm text-gray-600">
-              または以下をクリックして選択
-            </p>
-          </div>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isLoading}
-            className="inline-block rounded-lg bg-blue-500 px-6 py-2 font-medium text-white transition-colors hover:bg-blue-600 disabled:bg-gray-400"
+      {!hasLoadedScore ? (
+        <>
+          {/* ドラッグ&ドロップエリア */}
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`rounded-lg border-2 border-dashed px-8 py-12 text-center transition-colors ${
+              isDragging
+                ? 'border-blue-500 bg-blue-50'
+                : 'border-gray-300 hover:border-blue-400'
+            }`}
           >
-            {isLoading ? '処理中...' : 'ファイルを選択'}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".mscz,.mxl,.xml"
+              onChange={handleFileInput}
+              disabled={isLoading}
+              className="hidden"
+            />
+
+            <div className="space-y-4">
+              <div className="text-4xl">🎵</div>
+              <div>
+                <p className="text-lg font-semibold text-gray-700">
+                  MSCZ ファイルをドラッグ&ドロップ
+                </p>
+                <p className="mt-2 text-sm text-gray-600">
+                  または以下をクリックして選択
+                </p>
+              </div>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading}
+                className="inline-block rounded-lg bg-blue-500 px-6 py-2 font-medium text-white transition-colors hover:bg-blue-600 disabled:bg-gray-400"
+              >
+                {isLoading ? '処理中...' : 'ファイルを選択'}
+              </button>
+            </div>
+          </div>
+
+          {/* demo.mscz 読み込みボタン */}
+          <div className="flex items-center gap-4">
+            <div className="flex-1 border-t border-gray-300" />
+            <span className="text-sm text-gray-500">または</span>
+            <div className="flex-1 border-t border-gray-300" />
+          </div>
+
+          <button
+            onClick={loadDemoFile}
+            disabled={isLoading}
+            className="w-full rounded-lg border border-gray-300 px-4 py-3 font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:bg-gray-100"
+          >
+            {isLoading ? '処理中...' : 'デモ楽譜を読み込み'}
           </button>
-        </div>
-      </div>
-
-      {/* demo.mscz 読み込みボタン */}
-      <div className="flex items-center gap-4">
-        <div className="flex-1 border-t border-gray-300" />
-        <span className="text-sm text-gray-500">または</span>
-        <div className="flex-1 border-t border-gray-300" />
-      </div>
-
-      <button
-        onClick={loadDemoFile}
-        disabled={isLoading}
-        className="w-full rounded-lg border border-gray-300 px-4 py-3 font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:bg-gray-100"
-      >
-        {isLoading ? '処理中...' : 'デモ楽譜を読み込み'}
-      </button>
-
-      {/* エラー表示 */}
-      {error && (
-        <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-red-700">
-          <p className="font-semibold">エラーが発生しました</p>
-          <p className="mt-1 text-sm">{error}</p>
-        </div>
+        </>
+      ) : (
+        <Alert variant="success">
+          <AlertTitle>
+            読み込みが完了しました。(ファイル名: {fileName})
+          </AlertTitle>
+          <AlertDescription>
+            ファイルを削除すると、別のファイルを選択できます。
+          </AlertDescription>
+        </Alert>
       )}
 
-      {/* 処理状況 */}
+      {error && (
+        <Alert variant="error">
+          <AlertTitle>エラーが発生しました</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
       {isLoading && !error && (
-        <div className="rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-blue-700">
-          <p className="font-semibold">処理中...</p>
-          <p className="mt-1 text-sm">
+        <Alert variant="info">
+          <AlertTitle>処理中...</AlertTitle>
+          <AlertDescription>
             楽譜ファイルを読み込んで MusicXML に変換しています
-          </p>
-        </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {hasLoadedScore && (
+        <button
+          onClick={handleResetScore}
+          className="w-full rounded-lg border border-red-300 px-4 py-3 font-medium text-red-700 transition-colors hover:bg-red-50"
+        >
+          ファイルを削除
+        </button>
       )}
     </div>
   )

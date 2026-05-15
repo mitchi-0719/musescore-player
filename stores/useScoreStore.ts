@@ -30,11 +30,11 @@ export const useScoreStore = create<ScoreState>((set) => ({
   setFileBinary: (binary, fileName) =>
     set({ fileBinary: binary, fileName, error: null }),
 
-  setMusicXml: (xml) => set({ musicXml: xml, isLoading: false }),
+  setMusicXml: (xml) => set({ musicXml: xml }),
 
   setLoading: (isLoading) => set({ isLoading }),
 
-  setError: (error) => set({ error, isLoading: false }),
+  setError: (error) => set({ error }),
 
   reset: () =>
     set({

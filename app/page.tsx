@@ -9,9 +9,6 @@ export default function Home() {
         <h1 className="mb-2 text-3xl font-bold text-gray-900">
           MuseScore Player
         </h1>
-        <p className="mb-8 text-gray-600">
-          MSCZ ファイルを読み込んで、MusicXML に変換します
-        </p>
         <FileUploader />
       </div>
     </main>
