@@ -6,12 +6,12 @@ import { useScoreStore } from '@/stores/useScoreStore'
 
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
+type OSMDInstance = import('opensheetmusicdisplay').OpenSheetMusicDisplay
+
 export default function ScorePreview() {
   const musicXml = useScoreStore((state) => state.musicXml)
   const containerRef = useRef<HTMLDivElement>(null)
-  const osmdRef = useRef<{
-    clear: () => void
-  } | null>(null)
+  const osmdRef = useRef<OSMDInstance | null>(null)
   const [renderError, setRenderError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -41,6 +41,9 @@ export default function ScorePreview() {
         if (isCancelled) return
 
         osmd.render()
+        if (isCancelled) {
+          osmd.clear()
+        }
       } catch (err) {
         const message =
           err instanceof Error
@@ -79,7 +82,12 @@ export default function ScorePreview() {
         </Alert>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white p-2">
-          <div ref={containerRef} className="min-h-24" />
+          <div
+            ref={containerRef}
+            className="min-h-24"
+            role="img"
+            aria-label="楽譜プレビュー"
+          />
         </div>
       )}
     </section>
