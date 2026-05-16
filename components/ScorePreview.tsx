@@ -25,9 +25,6 @@ export default function ScorePreview() {
       try {
         setRenderError(null)
         osmdRef.current?.clear()
-        if (containerRef.current) {
-          containerRef.current.innerHTML = ''
-        }
 
         const { OpenSheetMusicDisplay } = await import('opensheetmusicdisplay')
         if (isCancelled || !containerRef.current) return
@@ -61,9 +58,6 @@ export default function ScorePreview() {
       isCancelled = true
       osmdRef.current?.clear()
       osmdRef.current = null
-      if (containerRef.current) {
-        containerRef.current.innerHTML = ''
-      }
     }
   }, [musicXml])
 
