@@ -2,14 +2,17 @@
 
 import { useEffect } from 'react'
 
-import { initPlayer } from '@/hooks/useAudioPlayer'
+import {
+  initPlayerFromMusicXml,
+  initPlayerFromOsmd,
+} from '@/hooks/useAudioPlayer'
 import { useScoreStore } from '@/stores/useScoreStore'
 
-import { PlayerControls } from './PlayerControls'
+import PlayerControls from './PlayerControls'
 
-type Props = {}
+type Props = { osmdRef?: { current: any } }
 
-export const AudioPlayer = (_props: Props) => {
+export default function AudioPlayer({ osmdRef }: Props) {
   const musicXml = useScoreStore((s) => s.musicXml)
   const player = useScoreStore((s) => s.player)
   const setPlayer = useScoreStore((s) => s.setPlayer)
@@ -20,21 +23,21 @@ export const AudioPlayer = (_props: Props) => {
     let mounted = true
 
     let unsubscribe: (() => void) | undefined
-    let patched = false
 
     const setup = async () => {
       if (!musicXml) return
       try {
-        const p = await initPlayer({ tempo: 120 })
+        const p =
+          osmdRef && osmdRef.current
+            ? await initPlayerFromOsmd(osmdRef.current)
+            : await initPlayerFromMusicXml(musicXml)
         if (!mounted) return
 
-        // subscribe time updates
         unsubscribe = p.onTimeUpdate((t) => {
           setCurrentTime(t)
         })
 
-        // store playing state when play/pause called
-        // simple heuristic: wrap play/pause to set store
+        // wrap play/pause to set store state
         const origPlay = p.play.bind(p)
         const origPause = p.pause.bind(p)
         p.play = async () => {
@@ -46,9 +49,7 @@ export const AudioPlayer = (_props: Props) => {
           setIsPlaying(false)
         }
 
-        // publish player to store once (avoid duplicate sets)
         setPlayer(p)
-        patched = true
       } catch (err) {
         console.error('player init error', err)
       }
@@ -59,9 +60,7 @@ export const AudioPlayer = (_props: Props) => {
     return () => {
       mounted = false
       try {
-        // unsubscribe time updates
         if (unsubscribe) unsubscribe()
-        // dispose latest player from store (if any)
         const current = useScoreStore.getState().player
         current?.dispose()
         setPlayer(null)

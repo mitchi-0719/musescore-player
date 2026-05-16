@@ -13,8 +13,11 @@
     "start": "next start"
   },
   "dependencies": {
+    "@egoist/tailwindcss-icons": "^1.9.2",
+    "@iconify/react": "^6.0.2",
     "next": "16.2.6",
     "opensheetmusicdisplay": "^1.9.9",
+    "osmd-audio-player": "^0.7.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-use": "^17.6.0",
@@ -23,6 +26,7 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@iconify/json": "^2.2.474",
     "@tailwindcss/postcss": "^4",
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
     "@types/node": "^20",

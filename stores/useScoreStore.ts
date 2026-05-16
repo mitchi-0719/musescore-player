@@ -7,6 +7,7 @@ export type PlayerHandle = {
   setTempo: (bpm: number) => void
   getCurrentTime: () => number
   onTimeUpdate: (cb: (t: number) => void) => () => void
+  playNote?: (note: string | number, duration?: number) => void
   dispose: () => void
 }
 

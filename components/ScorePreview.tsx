@@ -1,10 +1,11 @@
 'use client'
 import { useEffect } from 'react'
 
+import { midiToNoteName, parseMusicXmlForEvents } from '@/hooks/useAudioPlayer'
 import { useOSMD } from '@/hooks/useOSMD'
 import { useScoreStore } from '@/stores/useScoreStore'
 
-import { AudioPlayer } from './AudioPlayer'
+import { ControlModal } from './ControlModal'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
 export const ScorePreview = () => {
@@ -12,6 +13,11 @@ export const ScorePreview = () => {
 
   const { containerRef, renderError, isRendering, osmdRef } = useOSMD(musicXml)
   const currentTime = useScoreStore((s) => s.currentTime)
+
+  const isLoading = useScoreStore((s) => s.isLoading)
+  const fileName = useScoreStore((s) => s.fileName)
+
+  const isLoadingScore = Boolean((isLoading || isRendering) && !musicXml)
 
   useEffect(() => {
     // Best-effort: attempt to highlight measure based on currentTime.
@@ -39,26 +45,66 @@ export const ScorePreview = () => {
     }
   }, [currentTime])
 
-  if (!musicXml) return null
+  useEffect(() => {
+    // Attach click handlers to rendered note elements to play individual notes.
+    try {
+      const player = useScoreStore.getState().player
+      if (!containerRef.current || !player || !musicXml) return
+      const { events } = parseMusicXmlForEvents(musicXml)
+      const noteEls = Array.from(
+        containerRef.current.querySelectorAll(
+          'svg [class*=note], svg [class*=notehead]'
+        )
+      ) as HTMLElement[]
+
+      const handlers: Array<() => void> = []
+      for (let i = 0; i < Math.min(noteEls.length, events.length); i++) {
+        const el = noteEls[i]
+        const ev = events[i]
+        const cb = () => {
+          if (typeof player.playNote === 'function') {
+            const noteName = midiToNoteName(ev.midi)
+            player.playNote(noteName, ev.duration || 0.5)
+          }
+          // quick visual flash
+          el.classList.add('musescore-player-note-pressed')
+          setTimeout(
+            () => el.classList.remove('musescore-player-note-pressed'),
+            150
+          )
+        }
+        el.addEventListener('click', cb)
+        handlers.push(() => el.removeEventListener('click', cb))
+      }
+
+      return () => {
+        handlers.forEach((h) => h())
+      }
+    } catch (e) {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [containerRef, musicXml, osmdRef])
 
   return (
-    <section>
+    <section className="w-full">
       {renderError ? (
         <Alert variant="error">
           <AlertTitle>エラー</AlertTitle>
           <AlertDescription>{renderError}</AlertDescription>
         </Alert>
       ) : (
-        <div className="relative overflow-x-auto rounded-lg border bg-white">
-          <div ref={containerRef} className="min-h-24 w-full" />
-          <div className="absolute top-3 right-3 rounded bg-white/80 px-2 py-1 text-xs">
-            <AudioPlayer />
-          </div>
-          {isRendering ? (
-            <div className="absolute inset-0 flex items-center justify-center text-sm">
-              楽譜を変換中...
-            </div>
-          ) : null}
+        <div className="overflow-x-auto rounded-lg bg-white">
+          <div ref={containerRef} className="w-full" />
+          {isLoadingScore && (
+            <Alert variant="info">
+              <AlertTitle>処理中...</AlertTitle>
+              <AlertDescription>
+                楽譜ファイルを読み込んで MusicXML に変換しています
+              </AlertDescription>
+            </Alert>
+          )}
+          <ControlModal />
         </div>
       )}
     </section>

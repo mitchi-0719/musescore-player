@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { useScoreStore } from '@/stores/useScoreStore'
 
-export const PlayerControls = () => {
+export default function PlayerControls() {
   const player = useScoreStore((s) => s.player)
   const isPlaying = useScoreStore((s) => s.isPlaying)
   const currentTime = useScoreStore((s) => s.currentTime)
