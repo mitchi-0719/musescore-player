@@ -1,6 +1,7 @@
 'use client'
 
 import FileUploader from '@/components/FileUploader'
+import ScorePreview from '@/components/ScorePreview'
 
 export default function Home() {
   return (
@@ -10,6 +11,9 @@ export default function Home() {
           MuseScore Player
         </h1>
         <FileUploader />
+        <div className="mt-6">
+          <ScorePreview />
+        </div>
       </div>
     </main>
   )
