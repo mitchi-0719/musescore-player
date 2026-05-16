@@ -9,6 +9,9 @@ import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 export default function ScorePreview() {
   const musicXml = useScoreStore((state) => state.musicXml)
   const containerRef = useRef<HTMLDivElement>(null)
+  const osmdRef = useRef<{
+    clear: () => void
+  } | null>(null)
   const [renderError, setRenderError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -21,7 +24,10 @@ export default function ScorePreview() {
     const renderScore = async () => {
       try {
         setRenderError(null)
-        containerRef.current!.innerHTML = ''
+        osmdRef.current?.clear()
+        if (containerRef.current) {
+          containerRef.current.innerHTML = ''
+        }
 
         const { OpenSheetMusicDisplay } = await import('opensheetmusicdisplay')
         if (isCancelled || !containerRef.current) return
@@ -29,6 +35,7 @@ export default function ScorePreview() {
         const osmd = new OpenSheetMusicDisplay(containerRef.current, {
           autoResize: true,
         })
+        osmdRef.current = osmd
 
         await osmd.load(musicXml)
         if (isCancelled) return
@@ -49,6 +56,8 @@ export default function ScorePreview() {
 
     return () => {
       isCancelled = true
+      osmdRef.current?.clear()
+      osmdRef.current = null
       if (containerRef.current) {
         containerRef.current.innerHTML = ''
       }
