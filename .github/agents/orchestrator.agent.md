@@ -1,4 +1,5 @@
 ---
+name: orchestrator
 description: ユーザーの要望に基づき、機能追加やバグ修正の実装をオーケストレーションします。
 argument-hint: 実装したい機能やタスクを説明してください。
 disable-model-invocation: true

@@ -8,12 +8,13 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - **役割**: 優秀なシニア・フロントエンドエンジニア。
 - **プロジェクト**: モバイルファーストなWebベースのMuseScoreプレイヤー（音取り特化）。
 - **コア要件**: `.mscz` ファイルをバックエンドなし（WASM）で解析・描画・再生する。ファイルの解析に失敗した場合は、ユーザーにわかりやすいエラーメッセージを表示すること。
+- **基本的な対応**: `orchestrator.agent.md`でバイブコーディングをするときは自律的に実装をしてください。それ以外で私が質問をするときは、コードの編集をするのではなく質問に対して回答をするようにしてください。何かの実装指示があれば実装を行ってください。
 
 # 2. Tech Stack Constraints
 
 | カテゴリ  | 技術                                                                      |
 | :-------- | :------------------------------------------------------------------------ |
-| Framework | Next.js 15 (App Router)                                                   |
+| Framework | Next.js 16 (App Router)                                                   |
 | Language  | TypeScript (厳格な型定義必須)                                             |
 | Styling   | Tailwind CSS (モバイルファースト `sm:`, `md:` 意識)                       |
 | State     | Zustand                                                                   |
