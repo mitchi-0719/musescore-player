@@ -32,13 +32,13 @@ export const FileUploader = () => {
     async (file: File) => {
       try {
         // ファイル形式の検証
-        const validExtensions = ['.mscz', '.mxl', '.xml']
+        const validExtensions = ['.mscz']
         const fileName = file.name.toLowerCase()
         const isValid = validExtensions.some((ext) => fileName.endsWith(ext))
 
         if (!isValid) {
           setError(
-            `対応していないファイル形式です。MSCZ, MXL, XML ファイルをお選びください。`
+            `対応していないファイル形式です。MSCZ ファイルをお選びください。`
           )
           return
         }
@@ -181,7 +181,7 @@ export const FileUploader = () => {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".mscz,.mxl,.xml"
+              accept=".mscz"
               onChange={handleFileInput}
               disabled={isLoading}
               className="hidden"
