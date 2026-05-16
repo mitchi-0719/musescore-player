@@ -28,7 +28,6 @@ export default function ScorePreview() {
 
         const osmd = new OpenSheetMusicDisplay(containerRef.current, {
           autoResize: true,
-          drawingParameters: 'compact',
         })
 
         await osmd.load(musicXml)
