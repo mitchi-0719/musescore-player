@@ -14,7 +14,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 | カテゴリ  | 技術                                                                      |
 | :-------- | :------------------------------------------------------------------------ |
-| Framework | Next.js 15 (App Router)                                                   |
+| Framework | Next.js 16 (App Router)                                                   |
 | Language  | TypeScript (厳格な型定義必須)                                             |
 | Styling   | Tailwind CSS (モバイルファースト `sm:`, `md:` 意識)                       |
 | State     | Zustand                                                                   |
