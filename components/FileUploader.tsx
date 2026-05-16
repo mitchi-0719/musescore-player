@@ -7,7 +7,7 @@ import { useScoreStore } from '@/stores/useScoreStore'
 
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
-export default function FileUploader() {
+export const FileUploader = () => {
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -165,7 +165,7 @@ export default function FileUploader() {
 
   return (
     <div className="space-y-6">
-      {!hasLoadedScore ? (
+      {!hasLoadedScore && (
         <>
           {/* ドラッグ&ドロップエリア */}
           <div
@@ -222,15 +222,6 @@ export default function FileUploader() {
             {isLoading ? '処理中...' : 'デモ楽譜を読み込み'}
           </button>
         </>
-      ) : (
-        <Alert variant="success">
-          <AlertTitle>
-            読み込みが完了しました。(ファイル名: {fileName})
-          </AlertTitle>
-          <AlertDescription>
-            ファイルを削除すると、別のファイルを選択できます。
-          </AlertDescription>
-        </Alert>
       )}
 
       {error && (
@@ -247,15 +238,6 @@ export default function FileUploader() {
             楽譜ファイルを読み込んで MusicXML に変換しています
           </AlertDescription>
         </Alert>
-      )}
-
-      {hasLoadedScore && (
-        <button
-          onClick={handleResetScore}
-          className="w-full rounded-lg border border-red-300 px-4 py-3 font-medium text-red-700 transition-colors hover:bg-red-50"
-        >
-          ファイルを削除
-        </button>
       )}
     </div>
   )

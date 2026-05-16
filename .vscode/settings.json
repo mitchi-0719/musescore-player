@@ -17,5 +17,6 @@
   "tailwindCSS.includeLanguages": {
     "typescript": "javascript",
     "typescriptreact": "javascript"
-  }
+  },
+  "cSpell.words": ["mscz", "opensheetmusicdisplay", "osmd", "webmscore"]
 }
