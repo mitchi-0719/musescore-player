@@ -1,10 +1,10 @@
 'use client'
 
-import React, { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { useScoreStore } from '@/stores/useScoreStore'
 
-export default function PlayerControls() {
+export const PlayerControls = () => {
   const player = useScoreStore((s) => s.player)
   const isPlaying = useScoreStore((s) => s.isPlaying)
   const currentTime = useScoreStore((s) => s.currentTime)
@@ -57,21 +57,27 @@ export default function PlayerControls() {
     <div className="flex flex-col gap-3 rounded-lg border bg-white p-4">
       <div className="flex items-center gap-2">
         <button
+          type="button"
           onClick={handlePlay}
+          aria-label="再生"
           className="rounded bg-green-500 px-3 py-1 text-white disabled:opacity-60"
           disabled={!player}
         >
           再生
         </button>
         <button
+          type="button"
           onClick={handlePause}
+          aria-label="一時停止"
           className="rounded bg-yellow-400 px-3 py-1 text-white disabled:opacity-60"
           disabled={!player}
         >
           一時停止
         </button>
         <button
+          type="button"
           onClick={handleStop}
+          aria-label="停止"
           className="rounded bg-red-500 px-3 py-1 text-white disabled:opacity-60"
           disabled={!player}
         >
@@ -89,6 +95,7 @@ export default function PlayerControls() {
           min={40}
           max={220}
           value={localTempo}
+          aria-label="テンポ"
           onChange={(e) => handleTempoChange(Number(e.target.value))}
           className="flex-1"
         />
@@ -103,6 +110,7 @@ export default function PlayerControls() {
           max={1}
           step={0.01}
           value={volume}
+          aria-label="ボリューム"
           onChange={(e) => handleVolumeChange(Number(e.target.value))}
           className="flex-1"
         />

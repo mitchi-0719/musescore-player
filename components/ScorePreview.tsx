@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { useOSMD } from '@/hooks/useOSMD'
 import { useScoreStore } from '@/stores/useScoreStore'
 
-import AudioPlayer from './AudioPlayer'
+import { AudioPlayer } from './AudioPlayer'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
 export const ScorePreview = () => {
@@ -29,16 +29,15 @@ export const ScorePreview = () => {
         '[data-measure-number], .Measure, svg g.measure'
       )
       if (measures && measures.length > 0) {
-        const idx = Math.floor(
-          (currentTime % Math.max(1, currentTime + 1)) % measures.length
-        )
+        // 安全なインデックス計算: 小数は切り捨てて measure の数で mod
+        const idx = Math.floor(currentTime) % measures.length
         const el = measures[idx]
         if (el) el.classList.add('musescore-player-highlight')
       }
     } catch (e) {
       // ignore
     }
-  }, [currentTime, containerRef])
+  }, [currentTime])
 
   if (!musicXml) return null
 

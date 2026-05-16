@@ -11,17 +11,15 @@ export const FileUploader = () => {
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const {
-    setFileBinary,
-    setLoading,
-    setError,
-    setMusicXml,
-    error,
-    isLoading,
-    fileName,
-    musicXml,
-    reset,
-  } = useScoreStore()
+  const setFileBinary = useScoreStore((s) => s.setFileBinary)
+  const setLoading = useScoreStore((s) => s.setLoading)
+  const setError = useScoreStore((s) => s.setError)
+  const setMusicXml = useScoreStore((s) => s.setMusicXml)
+  const error = useScoreStore((s) => s.error)
+  const isLoading = useScoreStore((s) => s.isLoading)
+  const fileName = useScoreStore((s) => s.fileName)
+  const musicXml = useScoreStore((s) => s.musicXml)
+  const reset = useScoreStore((s) => s.reset)
 
   const hasLoadedScore = Boolean(fileName && musicXml && !isLoading)
 
@@ -169,6 +167,13 @@ export const FileUploader = () => {
         <>
           {/* ドラッグ&ドロップエリア */}
           <div
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                fileInputRef.current?.click()
+              }
+            }}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
