@@ -72,8 +72,13 @@ export default function ScorePreview() {
   }
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-xl font-semibold text-gray-900">楽譜プレビュー</h2>
+    <section aria-labelledby="score-preview-heading" className="space-y-3">
+      <h2
+        id="score-preview-heading"
+        className="text-xl font-semibold text-gray-900"
+      >
+        楽譜プレビュー
+      </h2>
 
       {renderError ? (
         <Alert variant="error">
