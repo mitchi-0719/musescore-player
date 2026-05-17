@@ -12,17 +12,10 @@ const iconMap = {
 
 export type IconName = keyof typeof iconMap
 
-// IconifyIconの型から、衝突の元になる 'icon' だけを除外（Omit）した型を作ります
 interface IconProps extends Omit<ComponentProps<typeof IconifyIcon>, 'icon'> {
   name: IconName
 }
 
 export const Icon = ({ name, className = '', ...props }: IconProps) => {
-  return (
-    <IconifyIcon
-      icon={iconMap[name]} // 辞書から安全にアイコン名を指定
-      className={className}
-      {...props} // props の中にはもう icon が入っていないので衝突しません！
-    />
-  )
+  return <IconifyIcon icon={iconMap[name]} className={className} {...props} />
 }

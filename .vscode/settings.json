@@ -18,5 +18,12 @@
     "typescript": "javascript",
     "typescriptreact": "javascript"
   },
-  "cSpell.words": ["mscz", "opensheetmusicdisplay", "osmd", "webmscore"]
+  "cSpell.words": [
+    "Iconify",
+    "mscz",
+    "musescore",
+    "opensheetmusicdisplay",
+    "osmd",
+    "webmscore"
+  ]
 }
