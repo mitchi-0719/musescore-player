@@ -438,31 +438,26 @@ export function parseMusicXmlForEvents(musicXml: string) {
 export async function initPlayerFromOsmd(
   osmdInstance: any
 ): Promise<PlayerHandle> {
-  const mod = await import('osmd-audio-player')
-  const pkg: any = (mod as any).default ?? mod
+  // Use osmd-audio-player to handle multi-part playback
+  const PlaybackEngine = (await import('osmd-audio-player')).default
 
-  // Try to find constructor
-  const PlayerClass = pkg.OSMDAudioPlayer ?? pkg.default ?? pkg
-
-  let inner: any = null
-  try {
-    inner = new PlayerClass(osmdInstance)
-  } catch (e) {
-    // fallback: if constructor signature differs, try factory
-    if (typeof pkg.create === 'function') inner = await pkg.create(osmdInstance)
-  }
+  const audioPlayer = new PlaybackEngine()
+  await audioPlayer.loadScore(osmdInstance)
 
   // Adapter implementing PlayerHandle
   const callbacks = new Set<(t: number) => void>()
+  let currentTime = 0
+  let isPlaying = false
   let pollId: number | null = null
 
   const startPolling = () => {
     if (pollId != null) return
     pollId = window.setInterval(() => {
       try {
-        const t = (inner && inner.getCurrentTime && inner.getCurrentTime()) || 0
-        callbacks.forEach((cb) => cb(t))
-      } catch (e) {}
+        callbacks.forEach((cb) => cb(currentTime))
+      } catch (e) {
+        console.warn('Polling error:', e)
+      }
     }, 100)
   }
 
@@ -473,61 +468,114 @@ export async function initPlayerFromOsmd(
     }
   }
 
+  // Monitor playback events to track current time
+  if (typeof audioPlayer.on === 'function') {
+    audioPlayer.on('iteration' as any, (step: any) => {
+      if (
+        audioPlayer.wholeNoteLength &&
+        typeof step === 'object' &&
+        step.index !== undefined
+      ) {
+        // Estimate current time based on steps
+        const bpm = audioPlayer.playbackSettings?.bpm || 120
+        const wholeNoteDuration = (4 * 60) / bpm // whole note duration in seconds
+        currentTime = (step.index * wholeNoteDuration) / 16 // rough estimation
+      }
+    })
+  }
+
   const adapter: PlayerHandle = {
     async play() {
-      if (!inner) return
-      if (inner.play) await inner.play()
-      startPolling()
-    },
-    pause() {
-      if (!inner) return
-      if (inner.pause) inner.pause()
-      stopPolling()
-    },
-    seek(time: number) {
-      if (!inner) return
-      if (inner.seek) inner.seek(time)
-      else if (inner.setPosition) inner.setPosition(time)
-    },
-    setTempo(bpm: number) {
-      if (!inner) return
-      if (inner.setTempo) inner.setTempo(bpm)
-      else if (inner.transport && inner.transport.bpm)
-        inner.transport.bpm.value = bpm
-    },
-    getCurrentTime() {
       try {
-        return (
-          (inner &&
-            ((inner.getCurrentTime && inner.getCurrentTime()) ||
-              (inner.getPosition && inner.getPosition()))) ||
-          0
-        )
-      } catch (e) {
-        return 0
+        await audioPlayer.play()
+        isPlaying = true
+        startPolling()
+      } catch (error) {
+        console.error('Play error:', error)
+        throw error
       }
     },
-    onTimeUpdate(cb: (t: number) => void) {
-      callbacks.add(cb)
-      startPolling()
-      return () => {
-        callbacks.delete(cb)
-        if (callbacks.size === 0) stopPolling()
+
+    pause() {
+      try {
+        audioPlayer.pause()
+        isPlaying = false
+        stopPolling()
+      } catch (error) {
+        console.warn('Pause error:', error)
       }
     },
+
+    seek(time: number) {
+      try {
+        // PlaybackEngine doesn't have a setCurrentTime method
+        // Try jumpToStep as an alternative
+        if (typeof (audioPlayer as any).jumpToStep === 'function') {
+          ;(audioPlayer as any).jumpToStep(Math.floor(time * 16))
+        }
+        currentTime = time
+      } catch (error) {
+        console.warn('Seek error:', error)
+      }
+    },
+
+    setTempo(bpm: number) {
+      try {
+        if (audioPlayer.playbackSettings) {
+          audioPlayer.playbackSettings.bpm = bpm
+        }
+      } catch (error) {
+        console.warn('SetTempo error:', error)
+      }
+    },
+
+    getCurrentTime() {
+      return currentTime
+    },
+
+    onTimeUpdate(callback: (time: number) => void) {
+      callbacks.add(callback)
+      return () => callbacks.delete(callback)
+    },
+
+    playNote() {
+      // osmd-audio-player doesn't support single note playback
+      console.warn('playNote not supported with osmd-audio-player')
+    },
+
     dispose() {
       try {
         stopPolling()
-        if (inner && inner.dispose) inner.dispose()
-      } catch (e) {}
-    },
-    playNote(note: string | number, duration = 0.5) {
-      try {
-        if (!inner) return
-        if (inner.playNote) inner.playNote(note, duration)
-      } catch (e) {}
+        if (typeof audioPlayer.stop === 'function') {
+          audioPlayer.stop()
+        }
+      } catch (error) {
+        console.warn('Dispose error:', error)
+      }
     },
   }
 
   return adapter
+}
+
+export async function initPlayerFromMusicXmlUsingOsmd(
+  musicXml: string
+): Promise<PlayerHandle> {
+  const { OpenSheetMusicDisplay } = await import('opensheetmusicdisplay')
+  const container = document.createElement('div')
+  container.style.display = 'none'
+  document.body.appendChild(container)
+
+  const osmd = new OpenSheetMusicDisplay(container, {
+    autoResize: true,
+  })
+
+  try {
+    await osmd.load(musicXml)
+    osmd.render()
+    return initPlayerFromOsmd(osmd)
+  } catch (error) {
+    container.remove()
+    throw error
+  }
 }

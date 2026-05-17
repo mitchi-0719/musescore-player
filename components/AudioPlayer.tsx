@@ -2,10 +2,7 @@
 
 import { useEffect } from 'react'
 
-import {
-  initPlayerFromMusicXml,
-  initPlayerFromOsmd,
-} from '@/hooks/useAudioPlayer'
+import { initPlayerFromOsmd } from '@/hooks/useAudioPlayer'
 import { useScoreStore } from '@/stores/useScoreStore'
 
 import PlayerControls from './PlayerControls'
@@ -13,7 +10,6 @@ import PlayerControls from './PlayerControls'
 type Props = { osmdRef?: { current: any } }
 
 export default function AudioPlayer({ osmdRef }: Props) {
-  const musicXml = useScoreStore((s) => s.musicXml)
   const player = useScoreStore((s) => s.player)
   const setPlayer = useScoreStore((s) => s.setPlayer)
   const setCurrentTime = useScoreStore((s) => s.setCurrentTime)
@@ -26,12 +22,9 @@ export default function AudioPlayer({ osmdRef }: Props) {
     let unsubscribe: (() => void) | undefined
 
     const setup = async () => {
-      if (!musicXml) return
+      if (!osmdRef?.current) return
       try {
-        const p =
-          osmdRef && osmdRef.current
-            ? await initPlayerFromOsmd(osmdRef.current)
-            : await initPlayerFromMusicXml(musicXml)
+        const p = await initPlayerFromOsmd(osmdRef.current)
 
         if (!mounted) return
 
@@ -88,9 +81,9 @@ export default function AudioPlayer({ osmdRef }: Props) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [musicXml])
+  }, [osmdRef])
 
-  if (!musicXml) return null
+  if (!osmdRef?.current) return null
 
   return (
     <div className="mt-4">
