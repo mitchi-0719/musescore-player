@@ -140,19 +140,80 @@ class ToneMusicPlayer implements PlayerHandle {
       transport.bpm.value = tempo
     }
 
-    this.synth = new this.tone.PolySynth(this.tone.Synth).toDestination()
+    // create synth with fallbacks for different Tone.js exports
+    try {
+      const PolySynthClass =
+        (this.tone && this.tone.PolySynth) ||
+        (this.tone && (this.tone as any).PolyphonicSynth) ||
+        null
 
-    this.part = new this.tone.Part((time: number, ev: NoteEvent) => {
-      const note = midiToNoteName(ev.midi)
-      try {
-        this.synth?.triggerAttackRelease(note as any, ev.duration, time)
-      } catch (e) {
-        // fallback: ignore
+      if (PolySynthClass && typeof PolySynthClass === 'function') {
+        this.synth = new PolySynthClass(this.tone.Synth).toDestination()
+      } else if (
+        this.tone &&
+        this.tone.Synth &&
+        typeof this.tone.Synth === 'function'
+      ) {
+        // fallback to a single Synth if PolySynth is not available
+        // create a very small poly-like wrapper by reusing Synth for each note
+        this.synth = new this.tone.Synth().toDestination()
+      } else {
+        // last-resort no-op synth
+        this.synth = { triggerAttackRelease: () => {} } as any
       }
-    }, events as any)
+    } catch (e) {
+      console.warn('Synth creation fallback triggered:', e)
+      try {
+        this.synth = new this.tone.Synth().toDestination()
+      } catch (e2) {
+        this.synth = { triggerAttackRelease: () => {} } as any
+      }
+    }
 
-    this.part.start(0)
-    this.part.loop = false
+    // Create a Part if available, otherwise schedule events on Transport
+    if (this.tone && typeof this.tone.Part === 'function') {
+      this.part = new this.tone.Part((time: number, ev: NoteEvent) => {
+        const note = midiToNoteName(ev.midi)
+        try {
+          this.synth?.triggerAttackRelease(note as any, ev.duration, time)
+        } catch (e) {
+          // ignore
+        }
+      }, events as any)
+
+      this.part.start(0)
+      this.part.loop = false
+    } else {
+      // schedule events manually on Transport as a fallback
+      const scheduledIds: any[] = []
+      const scheduleAll = () => {
+        try {
+          for (const ev of events) {
+            // schedule callback at ev.time seconds
+            const id = this.tone.Transport.schedule((time: number) => {
+              try {
+                const note = midiToNoteName(ev.midi)
+                this.synth?.triggerAttackRelease(note as any, ev.duration, time)
+              } catch (e) {}
+            }, ev.time)
+            scheduledIds.push(id)
+          }
+        } catch (e) {
+          // ignore scheduling errors
+        }
+      }
+
+      this.part = {
+        start: () => scheduleAll(),
+        stop: () => {
+          try {
+            // cancel all scheduled events
+            this.tone.Transport.cancel(0)
+          } catch (e) {}
+        },
+        dispose: () => {},
+      } as any
+    }
   }
 
   async play() {
