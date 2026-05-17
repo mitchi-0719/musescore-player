@@ -126,6 +126,10 @@ export const ScorePreview = () => {
             role="img"
             aria-label="楽譜表示エリア"
           />
+          {/* Audio controls (PlayerControls) */}
+          <div className="mt-3 px-4">
+            <AudioPlayer osmdRef={osmdRef} />
+          </div>
           {isLoadingScore && (
             <Alert variant="info">
               <AlertTitle>処理中...</AlertTitle>
@@ -134,6 +138,7 @@ export const ScorePreview = () => {
               </AlertDescription>
             </Alert>
           )}
+          <AudioPlayer />
           <ControlModal />
         </div>
       )}
