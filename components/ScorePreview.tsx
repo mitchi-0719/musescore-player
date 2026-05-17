@@ -153,9 +153,11 @@ export const ScorePreview = () => {
         </Alert>
       ) : (
         <div className="overflow-x-auto rounded-lg bg-white">
-          <div className="mt-3 px-4">
-            <AudioPlayer osmdRef={osmdRef} />
-          </div>
+          {!isRendering && (
+            <div className="mt-3 px-4">
+              <AudioPlayer osmdRef={osmdRef} />
+            </div>
+          )}
           <div
             ref={containerRef}
             className="w-full"

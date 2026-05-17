@@ -22,7 +22,7 @@ export default function AudioPlayer({ osmdRef }: Props) {
     let unsubscribe: (() => void) | undefined
 
     const setup = async () => {
-      if (!osmdRef?.current) return
+      if (!osmdRef?.current || !osmdRef.current.sheet) return
       try {
         const p = await initPlayerFromOsmd(osmdRef.current)
 
