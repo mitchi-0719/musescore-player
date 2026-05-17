@@ -468,6 +468,49 @@ export async function initPlayerFromOsmd(
     }
   }
 
+  // Ensure percussion/handclap instruments are mapped to supported soundfont instruments.
+  const mapInstrumentNameToMidi = (name?: string | null) => {
+    if (!name) return null
+    const n = name.toLowerCase()
+    if (n.includes('hand') && n.includes('clap')) return 126 // Applause
+    if (n.includes('clap')) return 126
+    if (n.includes('hand')) return 126
+    if (n.includes('perc') || n.includes('drum') || n.includes('drums'))
+      return 118 // Synth Drum
+    if (n.includes('snare')) return 118
+    if (n.includes('cymbal')) return 118
+    return null
+  }
+
+  try {
+    const scoreInst = (audioPlayer as any).scoreInstruments || []
+    for (const inst of scoreInst) {
+      const name =
+        inst.InstrumentName || inst.Name || inst.ShortName || inst.ScorePartName
+      const mapped = mapInstrumentNameToMidi(name)
+      if (mapped != null) {
+        // set for each voice in the instrument
+        if (inst.Voices && inst.Voices.length > 0) {
+          for (const v of inst.Voices) {
+            try {
+              // setInstrument expects a Voice and a midi id
+              if (typeof audioPlayer.setInstrument === 'function') {
+                // don't await to parallelize, but catch errors
+                audioPlayer.setInstrument(v, mapped).catch((e: any) => {
+                  console.warn('setInstrument failed for', name, e)
+                })
+              }
+            } catch (e) {
+              console.warn('Instrument mapping error:', e)
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Instrument auto-mapping failed:', e)
+  }
+
   // Monitor playback events to track current time
   if (typeof audioPlayer.on === 'function') {
     audioPlayer.on('iteration' as any, (step: any) => {
