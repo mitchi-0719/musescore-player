@@ -4,6 +4,123 @@
  */
 import type { MeasureMetadata, NoteMetadata } from '@/stores/useScoreStore'
 
+export interface MeasureMetadata {
+  number: number
+  startTime: number
+  endTime: number
+  duration: number
+}
+
+export interface NoteMetadata {
+  time: number
+  duration: number
+  midi: number
+  measureNumber: number
+}
+
+/**
+ * MusicXML を解析して、小節とノートのタイムラインを抽出する
+ */
+export function extractMeasuresAndNotes(xml: string) {
+  const doc = new DOMParser().parseFromString(xml, 'application/xml')
+  const part = doc.querySelector('part')
+  const divisionsEl = doc.querySelector('divisions')
+  const divisions = divisionsEl ? Number(divisionsEl.textContent || '1') : 1
+
+  // try to find tempo
+  let tempo = 120
+  const sound = doc.querySelector('sound[tempo]')
+  if (sound) {
+    const t = Number(sound.getAttribute('tempo'))
+    if (!Number.isNaN(t) && t > 0) tempo = t
+  }
+
+  const measures: MeasureMetadata[] = []
+  const notes: NoteMetadata[] = []
+
+  if (!part) return { measures, notes, totalDuration: 0 }
+
+  let currentTime = 0
+  const measureEls = Array.from(part.querySelectorAll('measure'))
+  for (let i = 0; i < measureEls.length; i++) {
+    const m = measureEls[i]
+    const measNumberAttr = m.getAttribute('number')
+    const measNumber = measNumberAttr ? Number(measNumberAttr) : i + 1
+    const startTime = currentTime
+
+    const noteEls = Array.from(m.querySelectorAll('note'))
+    for (const note of noteEls) {
+      const isRest = !!note.querySelector('rest')
+      const durationEl = note.querySelector('duration')
+      const durationDiv = durationEl ? Number(durationEl.textContent || '0') : 0
+
+      if (!isRest) {
+        const step = note.querySelector('pitch > step')?.textContent || 'C'
+        const alter = Number(
+          note.querySelector('pitch > alter')?.textContent || '0'
+        )
+        const octave = Number(
+          note.querySelector('pitch > octave')?.textContent || '4'
+        )
+        const stepMap: Record<string, number> = {
+          C: 0,
+          D: 2,
+          E: 4,
+          F: 5,
+          G: 7,
+          A: 9,
+          B: 11,
+        }
+        const semitone =
+          (stepMap[step.toUpperCase()] ?? 0) + (isNaN(alter) ? 0 : alter)
+        const midi = (octave + 1) * 12 + semitone
+        const durSec =
+          divisions > 0 ? (durationDiv / divisions) * (60 / tempo) : 0
+        notes.push({
+          time: currentTime,
+          duration: durSec,
+          midi,
+          measureNumber: measNumber,
+        })
+      }
+
+      const isChord = !!note.querySelector('chord')
+      if (!isChord) {
+        const advance =
+          divisions > 0 ? (durationDiv / divisions) * (60 / tempo) : 0
+        currentTime += advance
+      }
+    }
+
+    const endTime = currentTime
+    measures.push({
+      number: measNumber,
+      startTime,
+      endTime,
+      duration: endTime - startTime,
+    })
+  }
+
+  const totalDuration = currentTime
+  return { measures, notes, totalDuration }
+}
+
+/**
+ * 指定時刻に該当する小節番号を返す（存在しなければ null）
+ */
+export function getMeasureAtTime(time: number, measures: MeasureMetadata[]) {
+  if (!measures || measures.length === 0) return null
+  // clamp
+  if (time <= measures[0].startTime) return measures[0].number
+  for (const m of measures) {
+    if (time >= m.startTime && time < m.endTime) return m.number
+  }
+  // beyond end
+  const last = measures[measures.length - 1]
+  if (time >= last.endTime) return last.number
+  return null
+}
+
 /**
  * MusicXML を解析して小節とノートのメタデータを抽出
  */
