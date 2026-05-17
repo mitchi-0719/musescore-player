@@ -131,12 +131,26 @@ export const useScoreStore = create<ScoreState>((set) => ({
     }),
 
   // playback actions
-  setPlayer: (p) => set({ player: p }),
-  setIsPlaying: (v) => set({ isPlaying: v }),
-  setCurrentTime: (t) => set({ currentTime: t }),
-  setTempo: (bpm) => set({ tempo: bpm }),
-  setVolume: (v) => set({ volume: v }),
+  setPlayer: (p) =>
+    set((state) => (state.player === p ? state : { player: p })),
+  setIsPlaying: (v) =>
+    set((state) => (state.isPlaying === v ? state : { isPlaying: v })),
+  setCurrentTime: (t) =>
+    set((state) =>
+      Math.abs(state.currentTime - t) < 0.01 ? state : { currentTime: t }
+    ),
+  setTempo: (bpm) =>
+    set((state) => (state.tempo === bpm ? state : { tempo: bpm })),
+  setVolume: (v) =>
+    set((state) => (state.volume === v ? state : { volume: v })),
   setHighlightedMeasure: (measureNumber) =>
-    set({ highlightedMeasureNumber: measureNumber }),
-  setHighlightedNote: (time) => set({ highlightedNoteTime: time }),
+    set((state) =>
+      state.highlightedMeasureNumber === measureNumber
+        ? state
+        : { highlightedMeasureNumber: measureNumber }
+    ),
+  setHighlightedNote: (time) =>
+    set((state) =>
+      state.highlightedNoteTime === time ? state : { highlightedNoteTime: time }
+    ),
 }))
