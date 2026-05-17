@@ -11,17 +11,15 @@ export const FileUploader = () => {
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const {
-    setFileBinary,
-    setLoading,
-    setError,
-    setMusicXml,
-    error,
-    isLoading,
-    fileName,
-    musicXml,
-    reset,
-  } = useScoreStore()
+  const setFileBinary = useScoreStore((s) => s.setFileBinary)
+  const setLoading = useScoreStore((s) => s.setLoading)
+  const setError = useScoreStore((s) => s.setError)
+  const setMusicXml = useScoreStore((s) => s.setMusicXml)
+  const error = useScoreStore((s) => s.error)
+  const isLoading = useScoreStore((s) => s.isLoading)
+  const fileName = useScoreStore((s) => s.fileName)
+  const musicXml = useScoreStore((s) => s.musicXml)
+  const reset = useScoreStore((s) => s.reset)
 
   const hasLoadedScore = Boolean(fileName && musicXml && !isLoading)
 
@@ -164,11 +162,17 @@ export const FileUploader = () => {
   }, [reset])
 
   return (
-    <div className="space-y-6">
-      {!hasLoadedScore && (
+    <section className="mt-12 w-full max-w-2xl space-y-6 rounded-lg bg-white p-4 shadow-lg">
+      {!hasLoadedScore && !isLoading && (
         <>
-          {/* ドラッグ&ドロップエリア */}
           <div
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                fileInputRef.current?.click()
+              }
+            }}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -207,7 +211,6 @@ export const FileUploader = () => {
             </div>
           </div>
 
-          {/* demo.mscz 読み込みボタン */}
           <div className="flex items-center gap-4">
             <div className="flex-1 border-t border-gray-300" />
             <span className="text-sm text-gray-500">または</span>
@@ -230,15 +233,6 @@ export const FileUploader = () => {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-
-      {isLoading && !error && (
-        <Alert variant="info">
-          <AlertTitle>処理中...</AlertTitle>
-          <AlertDescription>
-            楽譜ファイルを読み込んで MusicXML に変換しています
-          </AlertDescription>
-        </Alert>
-      )}
-    </div>
+    </section>
   )
 }

@@ -9,6 +9,7 @@ export const useOSMD = (musicXml: string | null) => {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [renderError, setRenderError] = useState<string | null>(null)
   const [isRendering, setIsRendering] = useState(false)
+  const osmdRef = useRef<OSMDInstance | null>(null)
 
   useEffect(() => {
     if (!musicXml || !containerRef.current) {
@@ -17,7 +18,6 @@ export const useOSMD = (musicXml: string | null) => {
     }
 
     let isCancelled = false
-    const osmdRef = { current: null as OSMDInstance | null }
 
     const setup = async () => {
       try {
@@ -51,8 +51,9 @@ export const useOSMD = (musicXml: string | null) => {
     return () => {
       isCancelled = true
       osmdRef.current?.clear()
+      osmdRef.current = null
     }
   }, [musicXml])
 
-  return { containerRef, renderError, isRendering }
+  return { containerRef, renderError, isRendering, osmdRef }
 }
