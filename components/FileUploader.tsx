@@ -15,6 +15,7 @@ export const FileUploader = () => {
   const setLoading = useScoreStore((s) => s.setLoading)
   const setError = useScoreStore((s) => s.setError)
   const setMusicXml = useScoreStore((s) => s.setMusicXml)
+  const setMusicMxl = useScoreStore((s) => s.setMusicMxl)
   const error = useScoreStore((s) => s.error)
   const isLoading = useScoreStore((s) => s.isLoading)
   const fileName = useScoreStore((s) => s.fileName)
@@ -61,10 +62,11 @@ export const FileUploader = () => {
         setFileBinary(binary, file.name)
 
         // webmscore で MusicXML に変換
-        const musicXml = await convertMsczToMusicXml(binary)
+        const { musicXml, musicMxl } = await convertMsczToMusicXml(binary)
 
         // 結果を格納
         setMusicXml(musicXml)
+        setMusicMxl(musicMxl)
         setLoading(false)
 
         console.log(
@@ -78,7 +80,7 @@ export const FileUploader = () => {
         setLoading(false)
       }
     },
-    [setFileBinary, setLoading, setError, setMusicXml]
+    [setFileBinary, setLoading, setError, setMusicXml, setMusicMxl]
   )
 
   /**

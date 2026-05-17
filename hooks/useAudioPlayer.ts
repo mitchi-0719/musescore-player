@@ -105,6 +105,8 @@ class ToneMusicPlayer implements PlayerHandle {
   private part: any = null
   private synth: any = null
   private events: NoteEvent[] = []
+  private audioContext: AudioContext | null = null
+  private masterGain: GainNode | null = null
   private isPlayingFlag = false
   private offset = 0
   private playbackStart = 0
@@ -148,6 +150,8 @@ class ToneMusicPlayer implements PlayerHandle {
         this.synth = { triggerAttackRelease: () => {} } as any
       }
     }
+
+    this.initializeWebAudio()
   }
 
   async play() {
@@ -156,6 +160,8 @@ class ToneMusicPlayer implements PlayerHandle {
     } catch (e) {
       // Audio context may already be started
     }
+
+    await this.resumeWebAudio()
 
     if (this.isPlayingFlag) {
       return
@@ -238,6 +244,9 @@ class ToneMusicPlayer implements PlayerHandle {
         duration,
         this.tone.now()
       )
+      if (typeof note === 'number') {
+        this.playMidiTone(note, duration)
+      }
     } catch (e) {
       console.warn('Failed to play note:', e)
     }
@@ -298,9 +307,78 @@ class ToneMusicPlayer implements PlayerHandle {
         } catch (e) {
           console.warn('Failed to trigger note:', e)
         }
+        this.playMidiTone(event.midi, event.duration)
       }
 
       this.nextEventIndex += 1
+    }
+  }
+
+  private initializeWebAudio() {
+    if (typeof window === 'undefined') return
+
+    const AudioContextClass =
+      window.AudioContext || (window as any).webkitAudioContext
+    if (!AudioContextClass) return
+
+    try {
+      this.audioContext = new AudioContextClass()
+      this.masterGain = this.audioContext.createGain()
+      this.masterGain.gain.value = 0.18
+      this.masterGain.connect(this.audioContext.destination)
+    } catch (error) {
+      console.warn('WebAudio initialization failed:', error)
+      this.audioContext = null
+      this.masterGain = null
+    }
+  }
+
+  private async resumeWebAudio() {
+    if (!this.audioContext) return
+
+    try {
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume()
+      }
+    } catch (error) {
+      console.warn('WebAudio resume failed:', error)
+    }
+  }
+
+  private playMidiTone(midi: number, duration: number) {
+    if (!this.audioContext || !this.masterGain) return
+
+    const oscillator = this.audioContext.createOscillator()
+    const gain = this.audioContext.createGain()
+    const frequency = 440 * Math.pow(2, (midi - 69) / 12)
+    const safeDuration = Math.max(0.08, Math.min(duration || 0.25, 2.5))
+    const attack = 0.015
+    const release = 0.05
+    const now = this.audioContext.currentTime
+
+    oscillator.type = 'sine'
+    oscillator.frequency.value = frequency
+
+    gain.gain.setValueAtTime(0, now)
+    gain.gain.linearRampToValueAtTime(0.9, now + attack)
+    gain.gain.setValueAtTime(
+      0.9,
+      now + Math.max(attack, safeDuration - release)
+    )
+    gain.gain.linearRampToValueAtTime(0, now + safeDuration)
+
+    oscillator.connect(gain)
+    gain.connect(this.masterGain)
+    oscillator.start(now)
+    oscillator.stop(now + safeDuration + 0.02)
+
+    oscillator.onended = () => {
+      try {
+        oscillator.disconnect()
+        gain.disconnect()
+      } catch (error) {
+        // ignore
+      }
     }
   }
 }

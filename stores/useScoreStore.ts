@@ -36,6 +36,7 @@ export interface ScoreState {
 
   // 結果
   musicXml: string | null
+  musicMxl: Uint8Array | null
 
   // メタデータ
   measures: MeasureMetadata[]
@@ -56,6 +57,7 @@ export interface ScoreState {
   // 解析 / 再生 アクション
   setFileBinary: (binary: Uint8Array, fileName: string) => void
   setMusicXml: (xml: string) => void
+  setMusicMxl: (mxl: Uint8Array | null) => void
   setLoading: (isLoading: boolean) => void
   setError: (error: string | null) => void
   setMeasures: (measures: MeasureMetadata[]) => void
@@ -79,6 +81,7 @@ export const useScoreStore = create<ScoreState>((set) => ({
   isLoading: false,
   error: null,
   musicXml: null,
+  musicMxl: null,
 
   // metadata
   measures: [],
@@ -101,6 +104,8 @@ export const useScoreStore = create<ScoreState>((set) => ({
 
   setMusicXml: (xml) => set({ musicXml: xml }),
 
+  setMusicMxl: (mxl) => set({ musicMxl: mxl }),
+
   setLoading: (isLoading) => set({ isLoading }),
 
   setError: (error) => set({ error }),
@@ -118,6 +123,7 @@ export const useScoreStore = create<ScoreState>((set) => ({
       isLoading: false,
       error: null,
       musicXml: null,
+      musicMxl: null,
       measures: [],
       notes: [],
       totalDuration: 0,

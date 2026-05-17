@@ -5,14 +5,17 @@ import { waitFrame } from '@/lib/waitFrame'
 type OSMDInstance = import('opensheetmusicdisplay').OpenSheetMusicDisplay
 
 // 楽譜のXMLを渡すと、描画先のRefとエラー状態、描画中状態を返すフック
-export const useOSMD = (musicXml: string | null) => {
+export const useOSMD = (
+  musicXml: string | null,
+  musicMxl: Uint8Array | null = null
+) => {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [renderError, setRenderError] = useState<string | null>(null)
   const [isRendering, setIsRendering] = useState(false)
   const osmdRef = useRef<OSMDInstance | null>(null)
 
   useEffect(() => {
-    if (!musicXml || !containerRef.current) {
+    if ((!musicXml && !musicMxl) || !containerRef.current) {
       setIsRendering(false)
       return
     }
@@ -33,7 +36,18 @@ export const useOSMD = (musicXml: string | null) => {
           autoResize: true,
         })
         osmdRef.current = osmd
-        await osmd.load(musicXml)
+        if (musicMxl) {
+          const arrayBuffer = new Uint8Array(musicMxl).buffer
+          await osmd.load(
+            new Blob([arrayBuffer], {
+              type: 'application/vnd.recordare.musicxml',
+            })
+          )
+        } else if (musicXml) {
+          await osmd.load(musicXml)
+        } else {
+          return
+        }
         osmd.zoom = 0.4
         if (!isCancelled) {
           osmd.render()
@@ -53,7 +67,7 @@ export const useOSMD = (musicXml: string | null) => {
       osmdRef.current?.clear()
       osmdRef.current = null
     }
-  }, [musicXml])
+  }, [musicXml, musicMxl])
 
   return { containerRef, renderError, isRendering, osmdRef }
 }

@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 
 import { midiToNoteName, parseMusicXmlForEvents } from '@/hooks/useAudioPlayer'
 import { useOSMD } from '@/hooks/useOSMD'
+import { extractHarmonyLabels } from '@/lib/audioSync'
 import { useScoreStore } from '@/stores/useScoreStore'
 
 import AudioPlayer from './AudioPlayer'
@@ -11,8 +12,12 @@ import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
 export const ScorePreview = () => {
   const musicXml = useScoreStore((state) => state.musicXml)
+  const musicMxl = useScoreStore((state) => state.musicMxl)
 
-  const { containerRef, renderError, isRendering, osmdRef } = useOSMD(musicXml)
+  const { containerRef, renderError, isRendering, osmdRef } = useOSMD(
+    musicXml,
+    musicMxl
+  )
   const currentTime = useScoreStore((s) => s.currentTime)
   const highlightedMeasureNumber = useScoreStore(
     (s) => s.highlightedMeasureNumber
@@ -70,6 +75,33 @@ export const ScorePreview = () => {
     }
   }, [highlightedMeasureNumber])
 
+  // OSMD が N.C. を描画してしまう場合は、MusicXML の harmony 情報で上書きする
+  useEffect(() => {
+    if (!containerRef.current || !musicXml || isRendering) return
+
+    const frame = requestAnimationFrame(() => {
+      try {
+        const labels = extractHarmonyLabels(musicXml)
+        if (labels.length === 0) return
+
+        const chordNodes = Array.from(
+          containerRef.current?.querySelectorAll('svg text') || []
+        ).filter((node) => (node.textContent || '').trim() === 'N.C.')
+
+        chordNodes.forEach((node, index) => {
+          const label = labels[index]
+          if (label && label !== 'N.C.') {
+            node.textContent = label
+          }
+        })
+      } catch (error) {
+        console.warn('Chord label rewrite error:', error)
+      }
+    })
+
+    return () => cancelAnimationFrame(frame)
+  }, [musicXml, isRendering])
+
   // ノートクリック時の発音機能
   useEffect(() => {
     try {
@@ -121,16 +153,15 @@ export const ScorePreview = () => {
         </Alert>
       ) : (
         <div className="overflow-x-auto rounded-lg bg-white">
+          <div className="mt-3 px-4">
+            <AudioPlayer osmdRef={osmdRef} />
+          </div>
           <div
             ref={containerRef}
             className="w-full"
             role="img"
             aria-label="楽譜表示エリア"
           />
-          {/* Audio controls (PlayerControls) */}
-          <div className="mt-3 px-4">
-            <AudioPlayer osmdRef={osmdRef} />
-          </div>
           {isLoadingScore && (
             <Alert variant="info">
               <AlertTitle>処理中...</AlertTitle>
@@ -139,7 +170,6 @@ export const ScorePreview = () => {
               </AlertDescription>
             </Alert>
           )}
-          <AudioPlayer />
           <ControlModal />
         </div>
       )}
