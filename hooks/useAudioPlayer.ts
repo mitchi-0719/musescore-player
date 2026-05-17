@@ -102,6 +102,7 @@ function parseMusicXml(musicXml: string) {
 
 class ToneMusicPlayer implements PlayerHandle {
   private tone: any
+  private transport: any = null
   private part: any = null
   private synth: any = null
   private events: NoteEvent[] = []
@@ -131,13 +132,9 @@ class ToneMusicPlayer implements PlayerHandle {
       console.warn('Failed to extract measures and notes:', e)
     }
 
-    const transport =
-      (this.tone.getTransport
-        ? this.tone.getTransport()
-        : this.tone.Transport) ||
-      (this.tone.getContext ? this.tone.getContext().transport : undefined)
-    if (transport && transport.bpm) {
-      transport.bpm.value = tempo
+    this.transport = resolveTransport(this.tone)
+    if (this.transport && this.transport.bpm) {
+      this.transport.bpm.value = tempo
     }
 
     // create synth with fallbacks for different Tone.js exports
@@ -188,9 +185,15 @@ class ToneMusicPlayer implements PlayerHandle {
       const scheduledIds: any[] = []
       const scheduleAll = () => {
         try {
+          if (
+            !this.transport ||
+            typeof this.transport.schedule !== 'function'
+          ) {
+            return
+          }
           for (const ev of events) {
             // schedule callback at ev.time seconds
-            const id = this.tone.Transport.schedule((time: number) => {
+            const id = this.transport.schedule((time: number) => {
               try {
                 const note = midiToNoteName(ev.midi)
                 this.synth?.triggerAttackRelease(note as any, ev.duration, time)
@@ -208,7 +211,7 @@ class ToneMusicPlayer implements PlayerHandle {
         stop: () => {
           try {
             // cancel all scheduled events
-            this.tone.Transport.cancel(0)
+            this.transport?.cancel?.(0)
           } catch (e) {}
         },
         dispose: () => {},
@@ -225,8 +228,12 @@ class ToneMusicPlayer implements PlayerHandle {
 
     if (!this.isPlayingFlag) {
       try {
-        this.tone.Transport.start(undefined, this.offset)
+        if (!this.transport || typeof this.transport.start !== 'function') {
+          throw new Error('transport unavailable')
+        }
+        this.transport.start(undefined, this.offset)
         this.isPlayingFlag = true
+        this.part?.start?.(0)
         this.scheduleLoop()
       } catch (e) {
         console.error('Failed to start playback:', e)
@@ -237,9 +244,9 @@ class ToneMusicPlayer implements PlayerHandle {
 
   pause() {
     if (this.isPlayingFlag) {
-      this.tone.Transport.pause()
+      this.transport?.pause?.()
       this.isPlayingFlag = false
-      this.offset = this.tone.Transport.seconds
+      this.offset = this.transport?.seconds ?? this.offset
       if (this.rafId) {
         cancelAnimationFrame(this.rafId)
         this.rafId = null
@@ -250,24 +257,30 @@ class ToneMusicPlayer implements PlayerHandle {
   seek(time: number) {
     this.offset = Math.max(0, time)
     const wasPlaying = this.isPlayingFlag
-    this.tone.Transport.stop()
+    this.transport?.stop?.()
     if (wasPlaying) {
-      this.tone.Transport.start(undefined, this.offset)
+      this.transport?.start?.(undefined, this.offset)
     } else {
       // set transport position without starting
-      this.tone.Transport.seconds = this.offset
+      if (this.transport) {
+        this.transport.seconds = this.offset
+      }
     }
     this.emitTime(this.offset)
   }
 
   setTempo(bpm: number) {
     if (bpm >= 40 && bpm <= 220) {
-      this.tone.Transport.bpm.value = bpm
+      if (this.transport?.bpm) {
+        this.transport.bpm.value = bpm
+      }
     }
   }
 
   getCurrentTime() {
-    return this.isPlayingFlag ? this.tone.Transport.seconds : this.offset
+    return this.isPlayingFlag
+      ? (this.transport?.seconds ?? this.offset)
+      : this.offset
   }
 
   onTimeUpdate(cb: (t: number) => void) {
@@ -323,7 +336,7 @@ class ToneMusicPlayer implements PlayerHandle {
 
   private scheduleLoop() {
     const loop = () => {
-      const t = this.tone.Transport.seconds
+      const t = this.transport?.seconds ?? this.offset
       this.emitTime(t)
       if (this.isPlayingFlag) {
         this.rafId = requestAnimationFrame(loop)
@@ -331,6 +344,16 @@ class ToneMusicPlayer implements PlayerHandle {
     }
     this.rafId = requestAnimationFrame(loop)
   }
+}
+
+function resolveTransport(tone: any) {
+  return (
+    tone?.Transport ||
+    tone?.getTransport?.() ||
+    tone?.context?.transport ||
+    tone?.getContext?.()?.transport ||
+    null
+  )
 }
 
 export async function initPlayerFromMusicXml(
