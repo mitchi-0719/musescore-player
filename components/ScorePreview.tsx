@@ -5,6 +5,7 @@ import { midiToNoteName, parseMusicXmlForEvents } from '@/hooks/useAudioPlayer'
 import { useOSMD } from '@/hooks/useOSMD'
 import { useScoreStore } from '@/stores/useScoreStore'
 
+import AudioPlayer from './AudioPlayer'
 import { ControlModal } from './ControlModal'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
