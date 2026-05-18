@@ -527,6 +527,41 @@ export async function initPlayerFromOsmd(
     })
   }
 
+  const percussionMidiIds = new Set([114, 116, 118, 126])
+  const originalNotePlaybackCallback = (
+    audioPlayer as any
+  ).notePlaybackCallback?.bind(audioPlayer)
+
+  if (originalNotePlaybackCallback) {
+    ;(audioPlayer as any).notePlaybackCallback = (
+      audioDelay: number,
+      notes: any[]
+    ) => {
+      const normalizedNotes = notes.map((note) => {
+        const voice = note?.ParentVoiceEntry?.ParentVoice
+        const midiId = voice?.midiInstrumentId
+
+        if (!percussionMidiIds.has(midiId)) {
+          return note
+        }
+
+        const cloned = { ...note }
+        const pitch = Number(cloned.halfTone)
+
+        // Percussion instruments in OSMD can emit invalid low pitches.
+        // Clamp them into a safe, audible range so SoundfontPlayer can resolve a buffer.
+        if (!Number.isFinite(pitch) || pitch < 0) {
+          cloned.halfTone = 60
+        } else {
+          cloned.halfTone = Math.min(84, Math.max(36, pitch))
+        }
+
+        return cloned
+      })
+
+      return originalNotePlaybackCallback(audioDelay, normalizedNotes)
+    }
+  }
   const adapter: PlayerHandle = {
     async play() {
       try {
