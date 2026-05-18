@@ -17,7 +17,13 @@ interface WebMscoreLib {
 
 interface WebMscoreInstance {
   saveXml: () => Promise<string>
+  saveMxl: () => Promise<Uint8Array>
   metadata: () => Promise<any>
+}
+
+export interface MusicScoreExport {
+  musicXml: string
+  musicMxl: Uint8Array | null
 }
 
 declare global {
@@ -79,11 +85,11 @@ async function getWebMscore(): Promise<WebMscoreLib> {
 /**
  * MSCZ ファイルを MusicXML に変換
  * @param fileBinary MSCZ ファイルのバイナリ
- * @returns MusicXML 文字列
+ * @returns MusicXML と MXL の両方
  */
 export async function convertMsczToMusicXml(
   fileBinary: Uint8Array
-): Promise<string> {
+): Promise<MusicScoreExport> {
   try {
     // WebMscore を取得
     const WebMscore = await getWebMscore()
@@ -172,9 +178,17 @@ export async function convertMsczToMusicXml(
     const metadata = await score.metadata()
     console.log('楽譜メタデータ:', metadata)
 
-    // MusicXML を生成
+    // MusicXML と MXL を生成
     console.log('MusicXML に変換中...')
     const musicXml = await score.saveXml()
+    let musicMxl: Uint8Array | null = null
+
+    try {
+      console.log('MXL に変換中...')
+      musicMxl = await score.saveMxl()
+    } catch (mxlErr) {
+      console.warn('MXL の生成に失敗しました:', mxlErr)
+    }
 
     if (!musicXml || typeof musicXml !== 'string') {
       throw new Error('MusicXML の生成に失敗しました')
@@ -183,7 +197,7 @@ export async function convertMsczToMusicXml(
     console.log(
       `変換完了: MusicXML (${(musicXml.length / 1024).toFixed(1)} KB)`
     )
-    return musicXml
+    return { musicXml, musicMxl }
   } catch (err) {
     const message =
       err instanceof Error ? err.message : '不明なエラーが発生しました'

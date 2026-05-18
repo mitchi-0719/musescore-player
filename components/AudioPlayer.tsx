@@ -2,10 +2,7 @@
 
 import { useEffect } from 'react'
 
-import {
-  initPlayerFromMusicXml,
-  initPlayerFromOsmd,
-} from '@/hooks/useAudioPlayer'
+import { initPlayerFromOsmd } from '@/hooks/useAudioPlayer'
 import { useScoreStore } from '@/stores/useScoreStore'
 
 import PlayerControls from './PlayerControls'
@@ -13,11 +10,11 @@ import PlayerControls from './PlayerControls'
 type Props = { osmdRef?: { current: any } }
 
 export default function AudioPlayer({ osmdRef }: Props) {
-  const musicXml = useScoreStore((s) => s.musicXml)
   const player = useScoreStore((s) => s.player)
   const setPlayer = useScoreStore((s) => s.setPlayer)
   const setCurrentTime = useScoreStore((s) => s.setCurrentTime)
   const setIsPlaying = useScoreStore((s) => s.setIsPlaying)
+  const setError = useScoreStore((s) => s.setError)
 
   useEffect(() => {
     let mounted = true
@@ -25,12 +22,10 @@ export default function AudioPlayer({ osmdRef }: Props) {
     let unsubscribe: (() => void) | undefined
 
     const setup = async () => {
-      if (!musicXml) return
+      if (!osmdRef?.current || !osmdRef.current.sheet) return
       try {
-        const p =
-          osmdRef && osmdRef.current
-            ? await initPlayerFromOsmd(osmdRef.current)
-            : await initPlayerFromMusicXml(musicXml)
+        const p = await initPlayerFromOsmd(osmdRef.current)
+
         if (!mounted) return
 
         unsubscribe = p.onTimeUpdate((t) => {
@@ -41,8 +36,18 @@ export default function AudioPlayer({ osmdRef }: Props) {
         const origPlay = p.play.bind(p)
         const origPause = p.pause.bind(p)
         p.play = async () => {
-          await origPlay()
-          setIsPlaying(true)
+          try {
+            await origPlay()
+            setIsPlaying(true)
+          } catch (err) {
+            const msg =
+              err instanceof Error
+                ? err.message
+                : '再生に失敗しました。もう一度お試しください。'
+            setError(msg)
+            setIsPlaying(false)
+            throw err
+          }
         }
         p.pause = () => {
           origPause()
@@ -51,7 +56,14 @@ export default function AudioPlayer({ osmdRef }: Props) {
 
         setPlayer(p)
       } catch (err) {
-        console.error('player init error', err)
+        if (mounted) {
+          const msg =
+            err instanceof Error
+              ? err.message
+              : '音声再生の初期化に失敗しました'
+          console.error('player init error', err)
+          setError(msg)
+        }
       }
     }
 
@@ -64,12 +76,14 @@ export default function AudioPlayer({ osmdRef }: Props) {
         const current = useScoreStore.getState().player
         current?.dispose()
         setPlayer(null)
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Cleanup error:', e)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [musicXml])
+  }, [osmdRef])
 
-  if (!musicXml) return null
+  if (!osmdRef?.current) return null
 
   return (
     <div className="mt-4">

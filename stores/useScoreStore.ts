@@ -11,6 +11,20 @@ export type PlayerHandle = {
   dispose: () => void
 }
 
+export interface MeasureMetadata {
+  number: number
+  startTime: number
+  endTime: number
+  duration: number
+}
+
+export interface NoteMetadata {
+  time: number
+  duration: number
+  midi: number
+  measureNumber: number
+}
+
 export interface ScoreState {
   // ファイル情報
   fileName: string | null
@@ -22,6 +36,12 @@ export interface ScoreState {
 
   // 結果
   musicXml: string | null
+  musicMxl: Uint8Array | null
+
+  // メタデータ
+  measures: MeasureMetadata[]
+  notes: NoteMetadata[]
+  totalDuration: number
 
   // 再生関連
   player: PlayerHandle | null
@@ -30,11 +50,19 @@ export interface ScoreState {
   tempo: number
   volume: number
 
+  // ハイライト状態
+  highlightedMeasureNumber: number | null
+  highlightedNoteTime: number | null
+
   // 解析 / 再生 アクション
   setFileBinary: (binary: Uint8Array, fileName: string) => void
   setMusicXml: (xml: string) => void
+  setMusicMxl: (mxl: Uint8Array | null) => void
   setLoading: (isLoading: boolean) => void
   setError: (error: string | null) => void
+  setMeasures: (measures: MeasureMetadata[]) => void
+  setNotes: (notes: NoteMetadata[]) => void
+  setTotalDuration: (duration: number) => void
   reset: () => void
 
   // 再生状態管理アクション
@@ -43,6 +71,8 @@ export interface ScoreState {
   setCurrentTime: (t: number) => void
   setTempo: (bpm: number) => void
   setVolume: (v: number) => void
+  setHighlightedMeasure: (measureNumber: number | null) => void
+  setHighlightedNote: (time: number | null) => void
 }
 
 export const useScoreStore = create<ScoreState>((set) => ({
@@ -51,6 +81,12 @@ export const useScoreStore = create<ScoreState>((set) => ({
   isLoading: false,
   error: null,
   musicXml: null,
+  musicMxl: null,
+
+  // metadata
+  measures: [],
+  notes: [],
+  totalDuration: 0,
 
   // player state
   player: null,
@@ -59,14 +95,26 @@ export const useScoreStore = create<ScoreState>((set) => ({
   tempo: 120,
   volume: 1,
 
+  // highlight state
+  highlightedMeasureNumber: null,
+  highlightedNoteTime: null,
+
   setFileBinary: (binary, fileName) =>
     set({ fileBinary: binary, fileName, error: null }),
 
   setMusicXml: (xml) => set({ musicXml: xml }),
 
+  setMusicMxl: (mxl) => set({ musicMxl: mxl }),
+
   setLoading: (isLoading) => set({ isLoading }),
 
   setError: (error) => set({ error }),
+
+  setMeasures: (measures) => set({ measures }),
+
+  setNotes: (notes) => set({ notes }),
+
+  setTotalDuration: (duration) => set({ totalDuration: duration }),
 
   reset: () =>
     set({
@@ -75,17 +123,40 @@ export const useScoreStore = create<ScoreState>((set) => ({
       isLoading: false,
       error: null,
       musicXml: null,
+      musicMxl: null,
+      measures: [],
+      notes: [],
+      totalDuration: 0,
       player: null,
       isPlaying: false,
       currentTime: 0,
       tempo: 120,
       volume: 1,
+      highlightedMeasureNumber: null,
+      highlightedNoteTime: null,
     }),
 
   // playback actions
-  setPlayer: (p) => set({ player: p }),
-  setIsPlaying: (v) => set({ isPlaying: v }),
-  setCurrentTime: (t) => set({ currentTime: t }),
-  setTempo: (bpm) => set({ tempo: bpm }),
-  setVolume: (v) => set({ volume: v }),
+  setPlayer: (p) =>
+    set((state) => (state.player === p ? state : { player: p })),
+  setIsPlaying: (v) =>
+    set((state) => (state.isPlaying === v ? state : { isPlaying: v })),
+  setCurrentTime: (t) =>
+    set((state) =>
+      Math.abs(state.currentTime - t) < 0.01 ? state : { currentTime: t }
+    ),
+  setTempo: (bpm) =>
+    set((state) => (state.tempo === bpm ? state : { tempo: bpm })),
+  setVolume: (v) =>
+    set((state) => (state.volume === v ? state : { volume: v })),
+  setHighlightedMeasure: (measureNumber) =>
+    set((state) =>
+      state.highlightedMeasureNumber === measureNumber
+        ? state
+        : { highlightedMeasureNumber: measureNumber }
+    ),
+  setHighlightedNote: (time) =>
+    set((state) =>
+      state.highlightedNoteTime === time ? state : { highlightedNoteTime: time }
+    ),
 }))
