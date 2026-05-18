@@ -1,5 +1,5 @@
 'use client'
-import { useEffect } from 'react'
+import { MouseEventHandler, useEffect } from 'react'
 
 import { midiToNoteName, parseMusicXmlForEvents } from '@/hooks/useAudioPlayer'
 import { useOSMD } from '@/hooks/useOSMD'
@@ -27,6 +27,93 @@ export const ScorePreview = () => {
   const fileName = useScoreStore((s) => s.fileName)
 
   const isLoadingScore = Boolean((isLoading || isRendering) && !musicXml)
+
+  const handleScoreClick: MouseEventHandler<HTMLDivElement> = (e) => {
+    if (!containerRef.current) return
+    const target = e.target as Element
+
+    let hitNote: Element | null = null
+
+    const directNote = target.closest('.vf-stavenote')
+    if (directNote) {
+      playClickedNote(directNote)
+      return
+    }
+
+    const clickX = e.clientX
+    const clickY = e.clientY
+    const HIT_RADIUS = 40
+
+    const measures = containerRef.current.querySelectorAll(
+      '.vf-measure, .vf-stave'
+    )
+    let targetMeasure: Element | null = null
+
+    for (const measure of measures) {
+      const rect = measure.getBoundingClientRect()
+
+      if (
+        clickX >= rect.left &&
+        clickX <= rect.right &&
+        clickY >= rect.top - HIT_RADIUS &&
+        clickY <= rect.bottom + HIT_RADIUS
+      ) {
+        targetMeasure = measure
+        break
+      }
+    }
+
+    if (targetMeasure) {
+      const notesInMeasure = targetMeasure.querySelectorAll('.vf-stavenote')
+      let minDistance = Infinity
+
+      notesInMeasure.forEach((note) => {
+        const rect = note.getBoundingClientRect()
+        const noteCenterX = rect.left + rect.width / 2
+        const noteCenterY = rect.top + rect.height / 2
+
+        const distance = Math.sqrt(
+          Math.pow(clickX - noteCenterX, 2) + Math.pow(clickY - noteCenterY, 2)
+        )
+
+        if (distance <= HIT_RADIUS && distance < minDistance) {
+          minDistance = distance
+          hitNote = note
+        }
+      })
+    }
+
+    if (hitNote) {
+      playClickedNote(hitNote)
+    }
+  }
+
+  const playClickedNote = (clickedNote: Element) => {
+    const player = useScoreStore.getState().player
+    if (!containerRef.current || !player || !musicXml) return
+
+    // 既存のパース処理
+    const { events } = parseMusicXmlForEvents(musicXml)
+
+    // イベント配列とDOMのインデックスを合わせるための全取得
+    const allNotes = Array.from(
+      containerRef.current.querySelectorAll(
+        'svg [class*=note], svg [class*=notehead]'
+      )
+    )
+
+    // クリックされた音符が、楽譜全体の中で「何番目」の要素かを特定する
+    // （※クリック時のみ実行される O(N) なので、6000個あっても1ミリ秒以下で終わります）
+    const index = allNotes.indexOf(clickedNote as HTMLElement)
+
+    if (index !== -1 && events[index]) {
+      const ev = events[index]
+      if (typeof player.playNote === 'function') {
+        const noteName = midiToNoteName(ev.midi)
+        player.playNote(noteName, ev.duration || 0.5)
+      }
+    }
+  }
 
   // ハイライト表現を改善：小節メタデータを使用
   useEffect(() => {
@@ -102,48 +189,6 @@ export const ScorePreview = () => {
     return () => cancelAnimationFrame(frame)
   }, [musicXml, isRendering])
 
-  // ノートクリック時の発音機能
-  useEffect(() => {
-    try {
-      const player = useScoreStore.getState().player
-      if (!containerRef.current || !player || !musicXml) return
-
-      const { events } = parseMusicXmlForEvents(musicXml)
-      const noteEls = Array.from(
-        containerRef.current.querySelectorAll(
-          'svg [class*=note], svg [class*=notehead]'
-        )
-      ) as HTMLElement[]
-
-      const handlers: Array<() => void> = []
-      for (let i = 0; i < Math.min(noteEls.length, events.length); i++) {
-        const el = noteEls[i]
-        const ev = events[i]
-        const cb = () => {
-          if (typeof player.playNote === 'function') {
-            const noteName = midiToNoteName(ev.midi)
-            player.playNote(noteName, ev.duration || 0.5)
-          }
-          // quick visual flash
-          el.classList.add('musescore-player-note-pressed')
-          setTimeout(
-            () => el.classList.remove('musescore-player-note-pressed'),
-            150
-          )
-        }
-        el.addEventListener('click', cb)
-        handlers.push(() => el.removeEventListener('click', cb))
-      }
-
-      return () => {
-        handlers.forEach((h) => h())
-      }
-    } catch (e) {
-      console.warn('Note click handler setup error:', e)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [containerRef, musicXml, osmdRef])
-
   return (
     <section className="w-full">
       {renderError ? (
@@ -163,6 +208,7 @@ export const ScorePreview = () => {
             className="w-full"
             role="img"
             aria-label="楽譜表示エリア"
+            onClick={handleScoreClick}
           />
           {isLoadingScore && (
             <Alert variant="info">
@@ -175,44 +221,6 @@ export const ScorePreview = () => {
           <ControlModal />
         </div>
       )}
-
-      <style jsx>{`
-        :global(.musescore-player-highlight) {
-          fill: rgba(255, 255, 0, 0.3) !important;
-          stroke: rgba(255, 200, 0, 0.8) !important;
-          stroke-width: 2px !important;
-          animation: pulse-highlight 0.4s ease-in-out;
-        }
-
-        :global(.musescore-player-note-pressed) {
-          fill: rgba(100, 200, 255, 0.6) !important;
-          animation: note-press 0.15s ease-out;
-        }
-
-        @keyframes pulse-highlight {
-          0% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.7;
-          }
-          100% {
-            opacity: 1;
-          }
-        }
-
-        @keyframes note-press {
-          0% {
-            transform: scale(1);
-          }
-          50% {
-            transform: scale(1.1);
-          }
-          100% {
-            transform: scale(1);
-          }
-        }
-      `}</style>
     </section>
   )
 }
