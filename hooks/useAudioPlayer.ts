@@ -441,8 +441,109 @@ export async function initPlayerFromOsmd(
   // Use osmd-audio-player to handle multi-part playback
   const PlaybackEngine = (await import('osmd-audio-player')).default
 
+  const mapInstrumentNameToMidi = (name?: string | null) => {
+    if (!name) return null
+    const n = name.toLowerCase()
+    if (n.includes('hand') && n.includes('clap')) return 126 // Applause
+    if (n.includes('clap')) return 126
+    if (n.includes('hand')) return 126
+    if (n === 'vp' || n.includes('voice perc') || n.includes('voice percusion'))
+      return 118
+    if (n.includes('drum kit') || n.includes('drumset')) return 116 // Taiko Drum
+    if (n.includes('perc') || n.includes('drum') || n.includes('drums'))
+      return 116 // Taiko Drum
+    if (n.includes('snare')) return 118
+    if (n.includes('cymbal')) return 118
+    return null
+  }
+
+  const clonePlaybackOsmd = (osmd: any) => {
+    const sheet = osmd?.Sheet
+    if (!sheet) return osmd
+
+    const clonedSheet = {
+      ...sheet,
+      Instruments: Array.isArray(sheet.Instruments)
+        ? sheet.Instruments.map((inst: any) => {
+            const name =
+              inst.InstrumentName ||
+              inst.Name ||
+              inst.ShortName ||
+              inst.ScorePartName
+            const mapped =
+              inst.MidiInstrumentId === 128
+                ? 116
+                : mapInstrumentNameToMidi(name)
+
+            const clonedInst = {
+              ...inst,
+            }
+
+            clonedInst.MidiInstrumentId = inst.MidiInstrumentId ?? 0
+
+            if (mapped != null) {
+              clonedInst.MidiInstrumentId = mapped
+            }
+
+            if (Array.isArray(inst.SubInstruments)) {
+              clonedInst.SubInstruments = inst.SubInstruments.map(
+                (subInstrument: any) => ({
+                  ...subInstrument,
+                  fixedKey: mapped != null ? 0 : subInstrument.fixedKey,
+                })
+              )
+            }
+
+            if (Array.isArray(inst.Voices)) {
+              clonedInst.Voices = inst.Voices.map((voice: any) => ({
+                ...voice,
+                midiInstrumentId:
+                  mapped != null
+                    ? mapped
+                    : (voice.midiInstrumentId ?? clonedInst.MidiInstrumentId),
+              }))
+            }
+
+            return clonedInst
+          })
+        : sheet.Instruments,
+    }
+
+    return {
+      ...osmd,
+      cursor: osmd.cursor,
+      Sheet: clonedSheet,
+    }
+  }
+
+  const playbackOsmd = clonePlaybackOsmd(osmdInstance)
+
+  const scoreInst = playbackOsmd?.Sheet?.Instruments || []
+  for (const inst of scoreInst) {
+    const name =
+      inst.InstrumentName || inst.Name || inst.ShortName || inst.ScorePartName
+    const mapped =
+      inst.MidiInstrumentId === 128 ? 116 : mapInstrumentNameToMidi(name)
+
+    if (mapped == null) continue
+
+    inst.MidiInstrumentId = mapped
+
+    if (inst.SubInstruments && inst.SubInstruments.length > 0) {
+      for (const subInstrument of inst.SubInstruments) {
+        subInstrument.fixedKey = 0
+      }
+    }
+
+    if (inst.Voices && inst.Voices.length > 0) {
+      for (const voice of inst.Voices) {
+        voice.midiInstrumentId = mapped
+      }
+    }
+  }
+
   const audioPlayer = new PlaybackEngine()
-  await audioPlayer.loadScore(osmdInstance)
+  await audioPlayer.loadScore(playbackOsmd)
 
   // Adapter implementing PlayerHandle
   const callbacks = new Set<(t: number) => void>()
@@ -468,20 +569,6 @@ export async function initPlayerFromOsmd(
     }
   }
 
-  // Ensure percussion/handclap instruments are mapped to supported soundfont instruments.
-  const mapInstrumentNameToMidi = (name?: string | null) => {
-    if (!name) return null
-    const n = name.toLowerCase()
-    if (n.includes('hand') && n.includes('clap')) return 126 // Applause
-    if (n.includes('clap')) return 126
-    if (n.includes('hand')) return 126
-    if (n.includes('perc') || n.includes('drum') || n.includes('drums'))
-      return 118 // Synth Drum
-    if (n.includes('snare')) return 118
-    if (n.includes('cymbal')) return 118
-    return null
-  }
-
   try {
     const scoreInst = (audioPlayer as any).scoreInstruments || []
     for (const inst of scoreInst) {
@@ -489,6 +576,19 @@ export async function initPlayerFromOsmd(
         inst.InstrumentName || inst.Name || inst.ShortName || inst.ScorePartName
       const mapped = mapInstrumentNameToMidi(name)
       if (mapped != null) {
+        try {
+          if (inst.SubInstruments && inst.SubInstruments.length > 0) {
+            for (const subInstrument of inst.SubInstruments) {
+              subInstrument.fixedKey = 0
+            }
+          }
+        } catch (error) {
+          console.warn(
+            'Failed to normalize fixedKey for percussion instrument:',
+            error
+          )
+        }
+
         // set for each voice in the instrument
         if (inst.Voices && inst.Voices.length > 0) {
           for (const v of inst.Voices) {
@@ -511,6 +611,38 @@ export async function initPlayerFromOsmd(
     console.warn('Instrument auto-mapping failed:', e)
   }
 
+  const instrumentPlayer = (audioPlayer as any).instrumentPlayer
+  const originalSchedule = instrumentPlayer?.schedule?.bind(instrumentPlayer)
+
+  if (originalSchedule) {
+    instrumentPlayer.schedule = (
+      midiId: number,
+      time: number,
+      notes: Array<{ note: number; duration: number; gain: number }>
+    ) => {
+      const safeMidiId = Number.isFinite(Number(midiId)) ? Number(midiId) : 0
+      const playbackMidiId = safeMidiId === 128 ? 116 : safeMidiId
+      const isPercussionPlayback =
+        playbackMidiId === 116 ||
+        playbackMidiId === 118 ||
+        playbackMidiId === 126
+      const normalizedNotes = notes.map((n) => {
+        const pitch = Number(n.note)
+        const roundedPitch = Number.isFinite(pitch) ? Math.round(pitch) : 60
+        const safePitch = isPercussionPlayback
+          ? Math.min(81, Math.max(35, roundedPitch))
+          : Math.min(127, Math.max(1, roundedPitch))
+
+        return {
+          ...n,
+          note: safePitch,
+        }
+      })
+
+      return originalSchedule(playbackMidiId, time, normalizedNotes)
+    }
+  }
+
   // Monitor playback events to track current time
   if (typeof audioPlayer.on === 'function') {
     audioPlayer.on('iteration' as any, (step: any) => {
@@ -527,7 +659,6 @@ export async function initPlayerFromOsmd(
     })
   }
 
-  const percussionMidiIds = new Set([114, 116, 118, 126])
   const originalNotePlaybackCallback = (
     audioPlayer as any
   ).notePlaybackCallback?.bind(audioPlayer)
@@ -537,29 +668,30 @@ export async function initPlayerFromOsmd(
       audioDelay: number,
       notes: any[]
     ) => {
-      const normalizedNotes = notes.map((note) => {
-        const voice = note?.ParentVoiceEntry?.ParentVoice
-        const midiId = voice?.midiInstrumentId
-
-        if (!percussionMidiIds.has(midiId)) {
-          return note
+      for (const note of notes) {
+        if (!note) continue
+        const parentVoice = note?.ParentVoiceEntry?.ParentVoice
+        if (
+          parentVoice &&
+          !Number.isFinite(Number(parentVoice.midiInstrumentId))
+        ) {
+          parentVoice.midiInstrumentId = Number.isFinite(
+            Number(parentVoice?.Parent?.MidiInstrumentId)
+          )
+            ? Number(parentVoice.Parent.MidiInstrumentId)
+            : 0
         }
+        const pitch = Number(note.halfTone)
 
-        const cloned = { ...note }
-        const pitch = Number(cloned.halfTone)
-
-        // Percussion instruments in OSMD can emit invalid low pitches.
-        // Clamp them into a safe, audible range so SoundfontPlayer can resolve a buffer.
-        if (!Number.isFinite(pitch) || pitch < 0) {
-          cloned.halfTone = 60
+        // Keep original note instance intact and only sanitize pitch values.
+        if (!Number.isFinite(pitch)) {
+          note.halfTone = 60
         } else {
-          cloned.halfTone = Math.min(84, Math.max(36, pitch))
+          note.halfTone = Math.min(108, Math.max(12, Math.round(pitch)))
         }
+      }
 
-        return cloned
-      })
-
-      return originalNotePlaybackCallback(audioDelay, normalizedNotes)
+      return originalNotePlaybackCallback(audioDelay, notes)
     }
   }
   const adapter: PlayerHandle = {
