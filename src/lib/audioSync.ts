@@ -2,7 +2,8 @@
  * Audio Synchronization Helper
  * 再生時刻から楽譜上の小節・ノート情報をマッピングする機能を提供
  */
-import type { MeasureMetadata, NoteMetadata } from '@/stores/useScoreStore'
+
+import type { MeasureMetadata, NoteMetadata } from "../stores/useScoreStore"
 
 /**
  * MusicXML を解析して小節とノートのメタデータを抽出
@@ -63,7 +64,7 @@ export function extractMeasuresAndNotes(
 
       const measureStartTime = globalTime
       let measureDuration = 0
-      let noteIndicesInMeasure: number[] = []
+      const noteIndicesInMeasure: number[] = []
 
       const noteElements = Array.from(measure.querySelectorAll('note'))
 

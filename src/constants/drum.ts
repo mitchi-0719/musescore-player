@@ -1,6 +1,4 @@
-import * as Tone from 'tone'
-
-const DRUM_MAP: Record<number, string> = {
+export const DRUM_MAP: Record<number, string> = {
   36: 'kick.wav', // バスドラム1
   37: 'side-stick.wav', // Side Stick
   38: 'snare.wav', // Acoustic Snare
@@ -22,14 +20,4 @@ const DRUM_MAP: Record<number, string> = {
   56: 'cowbell.wav', // Cowbell
   57: 'crash2.wav', // Crash Cymbal 2
   59: 'ride2.wav', // Ride Cymbal 2
-}
-
-export const initDrumSampler = () => {
-  return new Tone.Sampler({
-    urls: DRUM_MAP,
-    baseUrl: '/sounds/drums/',
-    onload: () => {
-      console.log('🥁 カスタムドラムキットのロード完了！')
-    },
-  }).toDestination()
 }

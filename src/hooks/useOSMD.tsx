@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { waitFrame } from '../lib/waitFrame'
 
-import { waitFrame } from '@/lib/waitFrame'
 
 type OSMDInstance = import('opensheetmusicdisplay').OpenSheetMusicDisplay
 
-// 楽譜のXMLを渡すと、描画先のRefとエラー状態、描画中状態を返すフック
 export const useOSMD = (
   musicXml: string | null,
   musicMxl: Uint8Array | null = null
@@ -26,6 +25,7 @@ export const useOSMD = (
       try {
         setRenderError(null)
         setIsRendering(true)
+
         await waitFrame()
         await waitFrame()
 
@@ -33,9 +33,16 @@ export const useOSMD = (
         if (isCancelled || !containerRef.current) return
 
         const osmd = new OpenSheetMusicDisplay(containerRef.current, {
-          autoResize: true,
+          autoResize: true, // 画面サイズ変更時に自動リサイズ
+          backend: 'svg', // デモと同じくっきりしたSVG描画
+          drawTitle: true, // タイトルを描画する
+          drawSubtitle: true, // サブタイトルを描画する
+          drawingParameters: 'default', // デモ標準の美しいレイアウト
+          disableCursor: false, // 必須：Tone.jsと同期する縦棒（カーソル）を使うため
         })
+
         osmdRef.current = osmd
+
         if (musicMxl) {
           const arrayBuffer = new Uint8Array(musicMxl).buffer
           await osmd.load(
@@ -48,24 +55,33 @@ export const useOSMD = (
         } else {
           return
         }
+
         osmd.zoom = 0.4
+
         if (!isCancelled) {
           osmd.render()
           setIsRendering(false)
         }
       } catch (err) {
         if (!isCancelled) {
-          setRenderError('描画エラーが発生しました')
+          console.error('OSMD Render Error:', err)
+          setRenderError('楽譜の描画中にエラーが発生しました')
           setIsRendering(false)
         }
       }
     }
 
     setup()
+
     return () => {
       isCancelled = true
-      osmdRef.current?.clear()
-      osmdRef.current = null
+      if (osmdRef.current) {
+        osmdRef.current.clear()
+        osmdRef.current = null
+      }
+      if (containerRef.current) {
+        containerRef.current.innerHTML = ''
+      }
     }
   }, [musicXml, musicMxl])
 

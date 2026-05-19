@@ -1,33 +1,27 @@
-import { FlatCompat } from '@eslint/eslintrc'
+import js from '@eslint/js'
 import eslintConfigPrettier from 'eslint-config-prettier'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
 import unusedImports from 'eslint-plugin-unused-imports'
-import { dirname } from 'path'
-import { fileURLToPath } from 'url'
+import tseslint from 'typescript-eslint'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-})
-
-const eslintConfig = [
+export default tseslint.config(
   {
-    ignores: ['.next/**', 'out/**', 'build/**', 'next-env.d.ts'],
+    ignores: ['dist/**', 'node_modules/**'], 
   },
-
-  ...compat.extends('next/core-web-vitals', 'next/typescript'),
-
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
   {
     plugins: {
       'unused-imports': unusedImports,
+      'react-hooks': reactHooks,
+      'react-refresh': reactRefresh,
     },
     rules: {
+      ...reactHooks.configs.recommended.rules,
       'unused-imports/no-unused-imports': 'error',
+      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },
-
-  eslintConfigPrettier,
-]
-
-export default eslintConfig
+  eslintConfigPrettier
+)

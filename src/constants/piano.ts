@@ -1,6 +1,4 @@
-import * as Tone from 'tone'
-
-const PIANO_MAP = {
+export const PIANO_MAP = {
   A0: 'A0.mp3',
   C1: 'C1.mp3',
   Ds1: 'Ds1.mp3',
@@ -31,14 +29,4 @@ const PIANO_MAP = {
   Fs7: 'Fs7.mp3',
   A7: 'A7.mp3',
   C8: 'C8.mp3',
-}
-
-export const initPianoSampler = () => {
-  return new Tone.Sampler({
-    urls: PIANO_MAP,
-    baseUrl: '/sounds/piano/',
-    onload: () => {
-      console.log('🎹 ピアノのロード完了！')
-    },
-  }).toDestination()
 }

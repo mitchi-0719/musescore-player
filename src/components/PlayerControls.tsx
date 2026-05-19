@@ -1,8 +1,6 @@
-'use client'
-
 import { useCallback, useEffect, useState } from 'react'
+import { useScoreStore } from '../stores/useScoreStore'
 
-import { useScoreStore } from '@/stores/useScoreStore'
 
 export default function PlayerControls() {
   const player = useScoreStore((s) => s.player)

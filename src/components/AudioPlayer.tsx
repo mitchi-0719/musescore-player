@@ -1,15 +1,12 @@
-'use client'
-
 import { useEffect } from 'react'
 
-import { initPlayerFromOsmd } from '@/hooks/useAudioPlayer'
-import { useScoreStore } from '@/stores/useScoreStore'
 
+import { useScoreStore } from '../stores/useScoreStore'
 import PlayerControls from './PlayerControls'
 
 type Props = { osmdRef?: { current: any } }
 
-export default function AudioPlayer({ osmdRef }: Props) {
+export const AudioPlayer = ({ osmdRef }: Props) => {
   const player = useScoreStore((s) => s.player)
   const setPlayer = useScoreStore((s) => s.setPlayer)
   const setCurrentTime = useScoreStore((s) => s.setCurrentTime)

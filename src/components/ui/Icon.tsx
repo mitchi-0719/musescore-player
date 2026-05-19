@@ -1,6 +1,6 @@
-import { ComponentProps } from 'react'
 
 import { Icon as IconifyIcon } from '@iconify/react'
+import type { ComponentProps } from 'react'
 
 const iconMap = {
   play: 'material-symbols:play-arrow-rounded',
