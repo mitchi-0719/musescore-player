@@ -1,8 +1,7 @@
-import { MouseEventHandler, RefObject, useCallback } from 'react'
-
-import { PlayerHandle } from '@/stores/useScoreStore'
-
-import { NoteEvent, midiToNoteName } from './useAudioPlayer'
+import { useCallback, type MouseEventHandler, type RefObject } from 'react'
+import type { NoteEvent } from '../lib/musicXmlParser'
+import type { PlayerHandle } from '../stores/useScoreStore'
+import { midiToNoteName } from './useAudioPlayer'
 
 export const useNoteInteraction = (
   containerRef: RefObject<HTMLDivElement | null>,

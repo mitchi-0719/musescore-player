@@ -1,12 +1,13 @@
-'use client'
-
-import { FC, useState } from 'react'
-
-import { useOnOffState } from '@/hooks/useOnOffState'
-
+import { useState, type FC } from 'react'
+import { useOnOffState } from '../hooks/useOnOffState'
 import { Icon } from './ui/Icon'
 
-export const ControlModal = () => {
+type ControlModalProps = {
+  play: () => void
+  stop: () => void
+}
+
+export const ControlModal: FC<ControlModalProps> = ({ play, stop }) => {
   const { state: isOpen, toggle: toggleDrawer } = useOnOffState(false)
 
   return (
@@ -16,7 +17,12 @@ export const ControlModal = () => {
       }`}
     >
       <div className="w-full">
-        <DrawerHeader isOpen={isOpen} toggleOpen={toggleDrawer} />
+        <DrawerHeader
+          isOpen={isOpen}
+          toggleOpen={toggleDrawer}
+          play={play}
+          stop={stop}
+        />
       </div>
 
       <div className="h-40 w-full overflow-y-auto p-4">
@@ -29,9 +35,11 @@ export const ControlModal = () => {
 type HeaderProps = {
   isOpen: boolean
   toggleOpen: () => void
+  play: () => void
+  stop: () => void
 }
 
-const DrawerHeader: FC<HeaderProps> = ({ isOpen, toggleOpen }) => {
+const DrawerHeader: FC<HeaderProps> = ({ isOpen, toggleOpen, play, stop }) => {
   const [isPlaying, setIsPlaying] = useState(false)
 
   return (
@@ -45,7 +53,14 @@ const DrawerHeader: FC<HeaderProps> = ({ isOpen, toggleOpen }) => {
       </button>
 
       <button
-        onClick={() => setIsPlaying(!isPlaying)}
+        onClick={() => {
+          setIsPlaying(!isPlaying)
+          if (isPlaying) {
+            stop()
+          } else {
+            play()
+          }
+        }}
         className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white shadow-md transition-transform hover:bg-blue-700 active:scale-95"
         aria-label={isPlaying ? '停止' : '再生'}
       >

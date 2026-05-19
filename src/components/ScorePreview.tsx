@@ -1,14 +1,13 @@
-'use client'
-
 import { useMemo } from 'react'
 
 import { useShallow } from 'zustand/shallow'
 
-import { parseMusicXmlForEvents } from '@/hooks/useAudioPlayer'
-import { useNoteInteraction } from '@/hooks/useNoteInteraction'
-import { useOSMD } from '@/hooks/useOSMD'
-import { useScoreStore } from '@/stores/useScoreStore'
 
+import { useAudioPlayer } from '../hooks/useAudioPlayer'
+import { useNoteInteraction } from '../hooks/useNoteInteraction'
+import { useOSMD } from '../hooks/useOSMD'
+import { parseMusicXmlForEvents } from '../lib/musicXmlParser'
+import { useScoreStore } from '../stores/useScoreStore'
 import { ControlModal } from './ControlModal'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
@@ -22,7 +21,10 @@ export const ScorePreview = () => {
     }))
   )
 
-  const { containerRef, renderError, isRendering } = useOSMD(musicXml, musicMxl)
+  const { containerRef, renderError, isRendering, osmdRef } = useOSMD(
+    musicXml,
+    musicMxl
+  )
 
   const parsedEvents = useMemo(() => {
     if (!musicXml) return []
@@ -36,6 +38,8 @@ export const ScorePreview = () => {
   )
 
   const isLoadingScore = Boolean((isLoading || isRendering) && !musicXml)
+
+  const { play, stop, playNote } = useAudioPlayer(osmdRef.current, parsedEvents)
 
   return (
     <section className="w-full">
@@ -61,7 +65,7 @@ export const ScorePreview = () => {
               </AlertDescription>
             </Alert>
           )}
-          <ControlModal />
+          <ControlModal play={play} stop={stop} />
         </div>
       )}
     </section>

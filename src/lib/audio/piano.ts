@@ -1,6 +1,6 @@
 import * as Tone from 'tone'
+import { PIANO_MAP } from '../../constants/piano'
 
-import { PIANO_MAP } from '@/constants/piano'
 
 export const initPianoSampler = () => {
   return new Tone.Sampler({

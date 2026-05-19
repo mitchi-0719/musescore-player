@@ -1,10 +1,8 @@
-'use client'
-
 import { useCallback, useRef, useState } from 'react'
 
-import { convertMsczToMusicXml } from '@/lib/webmscore'
-import { useScoreStore } from '@/stores/useScoreStore'
 
+import { convertMsczToMusicXml } from '../lib/webmscore'
+import { useScoreStore } from '../stores/useScoreStore'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
 export const FileUploader = () => {

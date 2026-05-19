@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { waitFrame } from '../lib/waitFrame'
 
-import { waitFrame } from '@/lib/waitFrame'
 
 type OSMDInstance = import('opensheetmusicdisplay').OpenSheetMusicDisplay
 

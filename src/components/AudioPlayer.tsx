@@ -1,10 +1,7 @@
-'use client'
-
 import { useEffect } from 'react'
 
-import { initPlayerFromOsmd } from '@/hooks/useAudioPlayer'
-import { useScoreStore } from '@/stores/useScoreStore'
 
+import { useScoreStore } from '../stores/useScoreStore'
 import PlayerControls from './PlayerControls'
 
 type Props = { osmdRef?: { current: any } }

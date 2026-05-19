@@ -1,10 +1,8 @@
-'use client'
+import { FileUploader } from "./components/FileUploader";
+import { Header } from "./components/layout/Header";
+import { ScorePreview } from "./components/ScorePreview";
 
-import { FileUploader } from '@/components/FileUploader'
-import { ScorePreview } from '@/components/ScorePreview'
-import { Header } from '@/components/layout/Header'
-
-export default function Home() {
+export const App = () => {
   return (
     <div className="flex min-h-screen flex-col bg-linear-to-br from-blue-50 to-indigo-100">
       <Header />

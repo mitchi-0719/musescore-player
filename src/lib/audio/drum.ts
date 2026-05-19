@@ -1,6 +1,5 @@
 import * as Tone from 'tone'
-
-import { DRUM_MAP } from '@/constants/drum'
+import { DRUM_MAP } from '../../constants/drum'
 
 export const initDrumSampler = () => {
   return new Tone.Sampler({
