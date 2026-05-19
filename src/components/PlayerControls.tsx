@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useScoreStore } from '../stores/useScoreStore'
+import { useCallback, useState } from 'react'
 
+import { useScoreStore } from '../stores/useScoreStore'
 
 export default function PlayerControls() {
   const player = useScoreStore((s) => s.player)
-  const isPlaying = useScoreStore((s) => s.isPlaying)
   const currentTime = useScoreStore((s) => s.currentTime)
   const tempo = useScoreStore((s) => s.tempo)
   const volume = useScoreStore((s) => s.volume)
@@ -14,16 +13,7 @@ export default function PlayerControls() {
   const setCurrentTime = useScoreStore((s) => s.setCurrentTime)
 
   const [localTempo, setLocalTempo] = useState(tempo)
-  const [isDraggingSeek, setIsDraggingSeek] = useState(false)
   const [seekValue, setSeekValue] = useState(currentTime)
-
-  useEffect(() => setLocalTempo(tempo), [tempo])
-
-  useEffect(() => {
-    if (!isDraggingSeek) {
-      setSeekValue(currentTime)
-    }
-  }, [currentTime, isDraggingSeek])
 
   const handlePlay = useCallback(async () => {
     try {
@@ -61,17 +51,12 @@ export default function PlayerControls() {
     [setVolume]
   )
 
-  const handleSeekStart = useCallback(() => {
-    setIsDraggingSeek(true)
-  }, [])
-
   const handleSeekChange = useCallback((v: number) => {
     setSeekValue(v)
   }, [])
 
   const handleSeekEnd = useCallback(
     (v: number) => {
-      setIsDraggingSeek(false)
       player?.seek(v)
       setCurrentTime(v)
     },
@@ -104,8 +89,6 @@ export default function PlayerControls() {
             max={totalDuration || 1}
             step={0.1}
             value={seekValue}
-            onMouseDown={handleSeekStart}
-            onTouchStart={handleSeekStart}
             onChange={(e) => handleSeekChange(Number(e.target.value))}
             onMouseUp={(e) => handleSeekEnd(Number(e.currentTarget.value))}
             onTouchEnd={(e) =>

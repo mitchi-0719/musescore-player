@@ -2,7 +2,6 @@ import { useMemo } from 'react'
 
 import { useShallow } from 'zustand/shallow'
 
-
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
 import { useNoteInteraction } from '../hooks/useNoteInteraction'
 import { useOSMD } from '../hooks/useOSMD'
@@ -39,7 +38,7 @@ export const ScorePreview = () => {
 
   const isLoadingScore = Boolean((isLoading || isRendering) && !musicXml)
 
-  const { play, stop, playNote } = useAudioPlayer(osmdRef.current, parsedEvents)
+  const { play, stop } = useAudioPlayer(osmdRef, parsedEvents)
 
   return (
     <section className="w-full">

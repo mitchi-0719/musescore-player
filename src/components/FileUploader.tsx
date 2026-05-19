@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 
-
-import { convertMsczToMusicXml } from '../lib/webmscore'
+import { convertMsczToMusicXml } from '../lib/msczConverter'
 import { useScoreStore } from '../stores/useScoreStore'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
@@ -18,7 +17,6 @@ export const FileUploader = () => {
   const isLoading = useScoreStore((s) => s.isLoading)
   const fileName = useScoreStore((s) => s.fileName)
   const musicXml = useScoreStore((s) => s.musicXml)
-  const reset = useScoreStore((s) => s.reset)
 
   const hasLoadedScore = Boolean(fileName && musicXml && !isLoading)
 
@@ -151,15 +149,6 @@ export const FileUploader = () => {
       setError(message)
     }
   }, [processFile, setError])
-
-  const handleResetScore = useCallback(() => {
-    reset()
-    setIsDragging(false)
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
-  }, [reset])
 
   return (
     <section className="mt-12 w-full max-w-2xl space-y-6 rounded-lg bg-white p-4 shadow-lg">
