@@ -1,149 +1,187 @@
-import { useCallback, useEffect, useRef } from "react";
-import { DRUM_MAP } from "../constants/drum";
-import { PIANO_MAP } from "../constants/piano";
-import type { NoteEvent } from "../lib/musicXmlParser";
+import { type RefObject, useCallback, useEffect, useRef } from 'react'
 
+import type { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
+import * as Tone from 'tone'
+
+import { DRUM_MAP } from '../constants/drum'
+import { PIANO_MAP } from '../constants/piano'
+import type { NoteEvent } from '../lib/musicXmlParser'
 
 export const midiToNoteName = (midi: number) => {
   const names = [
-    "C",
-    "C#",
-    "D",
-    "D#",
-    "E",
-    "F",
-    "F#",
-    "G",
-    "G#",
-    "A",
-    "A#",
-    "B",
-  ];
-  return `${names[midi % 12]}${Math.floor(midi / 12) - 1}`;
-};
+    'C',
+    'C#',
+    'D',
+    'D#',
+    'E',
+    'F',
+    'F#',
+    'G',
+    'G#',
+    'A',
+    'A#',
+    'B',
+  ]
+  return `${names[midi % 12]}${Math.floor(midi / 12) - 1}`
+}
 
 export const useAudioPlayer = (
-  osmdInstance: any,
-  parsedEvents: NoteEvent[],
+  osmdRef: RefObject<OpenSheetMusicDisplay | null>,
+  parsedEvents: NoteEvent[]
 ) => {
-  // anyを使ってTurbopackの干渉を完全に防ぐ
-  const pianoSampler = useRef<any>(null);
-  const drumSampler = useRef<any>(null);
-  const toneRef = useRef<any>(null);
+  const pianoSampler = useRef<Tone.Sampler | null>(null)
+  const drumSampler = useRef<Tone.Sampler | null>(null)
+  const toneRef = useRef<typeof Tone | null>(null)
 
-  const isPlaying = useRef(false);
-  const startTime = useRef<number>(0);
-  const scheduledEventIndices = useRef<Set<number>>(new Set());
+  const isPlaying = useRef(false)
+  const startTime = useRef<number>(0)
+  const scheduledEventIndices = useRef<Set<number>>(new Set())
 
   useEffect(() => {
-    let isMounted = true;
+    let isMounted = true
 
     const initTone = async () => {
       try {
-        // ここが以前機能していた「大正解」のコードです
-        const mod = await import("tone");
-        const Tone = (mod as any).default ?? mod;
+        if (!isMounted) return
 
-        if (!isMounted) return;
-        toneRef.current = Tone;
+        // Tone を保持するが、AudioContext の作成につながる Sampler は
+        // ユーザー操作時（play）まで遅延して生成する。
+        toneRef.current = Tone
 
-        pianoSampler.current = new Tone.Sampler({
-          urls: PIANO_MAP as any,
-          baseUrl: "/sounds/piano/",
-        }).toDestination();
-
-        drumSampler.current = new Tone.Sampler({
-          urls: DRUM_MAP as any,
-          baseUrl: "/sounds/drums/",
-        }).toDestination();
-
-        console.log("Tone.js and Samplers loaded successfully!");
+        console.log('Tone.js loaded (samplers will be created on first play)')
       } catch (err) {
-        console.error("Failed to initialize Tone.js:", err);
+        console.error('Failed to initialize Tone.js:', err)
       }
-    };
+    }
 
-    initTone();
+    initTone()
 
     return () => {
-      isMounted = false;
-      pianoSampler.current?.dispose();
-      drumSampler.current?.dispose();
-    };
-  }, []);
+      isMounted = false
+      pianoSampler.current?.dispose()
+      drumSampler.current?.dispose()
+    }
+  }, [])
+
+  const normalizePianoUrls = (map: Record<string, string>) => {
+    const out: Record<string, string> = {}
+    Object.entries(map).forEach(([k, v]) => {
+      // convert Ds4 -> D#4 style (s -> # before digits)
+      const nk = k.replace(/s(?=\d)/g, '#')
+      out[nk] = v
+    })
+    return out
+  }
+
+  const normalizeDrumUrls = (map: Record<number, string>) => {
+    const out: Record<string, string> = {}
+    Object.entries(map).forEach(([k, v]) => {
+      out[String(k)] = v
+    })
+    return out
+  }
+
+  const ensureSamplers = useCallback(async () => {
+    const Tone = toneRef.current
+    if (!Tone) return
+
+    if (!pianoSampler.current) {
+      const pianoUrls = normalizePianoUrls(PIANO_MAP)
+      pianoSampler.current = new Tone.Sampler({
+        urls: pianoUrls,
+        baseUrl: '/sounds/piano/',
+      }).toDestination()
+    }
+
+    if (!drumSampler.current) {
+      const drumUrls = normalizeDrumUrls(DRUM_MAP)
+      drumSampler.current = new Tone.Sampler({
+        urls: drumUrls,
+        baseUrl: '/sounds/drums/',
+      }).toDestination()
+    }
+  }, [])
 
   const play = useCallback(async () => {
-    const Tone = toneRef.current;
-    if (!Tone) return;
+    const Tone = toneRef.current
+    if (!Tone) return
 
-    // Contextの起動（以前の安全なロジック）
-    if (typeof Tone.start === "function") {
+    // AudioContext はユーザー操作の後に開始する必要がある
+    if (typeof Tone.start === 'function') {
       try {
-        await Tone.start();
+        await Tone.start()
       } catch (e) {
-        console.warn("Tone start failed:", e);
+        console.warn('Tone start failed:', e)
       }
     }
 
-    isPlaying.current = true;
-    startTime.current = Tone.now();
-    scheduledEventIndices.current.clear();
-
-    if (osmdInstance) {
-      osmdInstance.cursor.show();
+    // start() 後に Sampler を生成（これで AudioContext の自動生成を避ける）
+    try {
+      await ensureSamplers()
+    } catch (e) {
+      console.warn('Failed to create samplers:', e)
     }
-  }, [osmdInstance]);
+
+    isPlaying.current = true
+    startTime.current = Tone.now()
+    scheduledEventIndices.current.clear()
+
+    if (osmdRef.current) {
+      osmdRef.current.cursor.show()
+    }
+  }, [osmdRef, ensureSamplers])
 
   const stop = useCallback(() => {
-    isPlaying.current = false;
-    pianoSampler.current?.releaseAll();
-    drumSampler.current?.releaseAll();
+    isPlaying.current = false
+    pianoSampler.current?.releaseAll()
+    drumSampler.current?.releaseAll()
 
-    if (osmdInstance) {
-      osmdInstance.cursor.hide();
+    if (osmdRef.current) {
+      osmdRef.current.cursor.hide()
     }
-  }, [osmdInstance]);
+  }, [osmdRef])
 
   const playNote = useCallback(
-    (midi: number, duration: string | number = "8n") => {
-      const sampler = midi < 60 ? drumSampler.current : pianoSampler.current;
-      sampler?.triggerAttackRelease(midiToNoteName(midi), duration);
+    (midi: number, duration: string | number = '8n') => {
+      const sampler = midi < 60 ? drumSampler.current : pianoSampler.current
+      if (!sampler) return
+      sampler.triggerAttackRelease(midiToNoteName(midi), duration)
     },
-    [],
-  );
+    []
+  )
 
   const seek = useCallback((time: number) => {
-    if (!toneRef.current) return;
-    startTime.current = toneRef.current.now() - time;
-    scheduledEventIndices.current.clear();
-  }, []);
+    if (!toneRef.current) return
+    startTime.current = toneRef.current.now() - time
+    scheduledEventIndices.current.clear()
+  }, [])
 
   useEffect(() => {
-    if (!isPlaying.current || !toneRef.current) return;
+    if (!isPlaying.current || !toneRef.current) return
 
-    let animationFrameId: number;
+    let animationFrameId: number
     const update = () => {
-      if (!isPlaying.current || !toneRef.current) return;
+      if (!isPlaying.current || !toneRef.current) return
 
-      const elapsed = toneRef.current.now() - startTime.current;
+      const elapsed = toneRef.current.now() - startTime.current
 
       parsedEvents.forEach((ev, index) => {
         if (!scheduledEventIndices.current.has(index) && elapsed >= ev.time) {
-          playNote(ev.midi, ev.duration);
-          scheduledEventIndices.current.add(index);
+          playNote(ev.midi, ev.duration)
+          scheduledEventIndices.current.add(index)
 
-          if (osmdInstance) {
-            osmdInstance.cursor.next();
+          if (osmdRef.current) {
+            osmdRef.current.cursor.next()
           }
         }
-      });
+      })
 
-      animationFrameId = requestAnimationFrame(update);
-    };
+      animationFrameId = requestAnimationFrame(update)
+    }
 
-    animationFrameId = requestAnimationFrame(update);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [parsedEvents, osmdInstance, playNote]);
+    animationFrameId = requestAnimationFrame(update)
+    return () => cancelAnimationFrame(animationFrameId)
+  }, [parsedEvents, playNote, osmdRef])
 
-  return { play, stop, seek, playNote };
-};
+  return { play, stop, seek, playNote }
+}

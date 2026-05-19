@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+
+import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
+
 import { waitFrame } from '../lib/waitFrame'
-
-
-type OSMDInstance = import('opensheetmusicdisplay').OpenSheetMusicDisplay
 
 export const useOSMD = (
   musicXml: string | null,
@@ -11,7 +11,7 @@ export const useOSMD = (
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [renderError, setRenderError] = useState<string | null>(null)
   const [isRendering, setIsRendering] = useState(false)
-  const osmdRef = useRef<OSMDInstance | null>(null)
+  const osmdRef = useRef<OpenSheetMusicDisplay | null>(null)
 
   useEffect(() => {
     if ((!musicXml && !musicMxl) || !containerRef.current) {
@@ -29,7 +29,6 @@ export const useOSMD = (
         await waitFrame()
         await waitFrame()
 
-        const { OpenSheetMusicDisplay } = await import('opensheetmusicdisplay')
         if (isCancelled || !containerRef.current) return
 
         const osmd = new OpenSheetMusicDisplay(containerRef.current, {
