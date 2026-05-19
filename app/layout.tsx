@@ -17,13 +17,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja" className="h-full antialiased">
-      <head>
-        {/* Verovio WASM ファイルのロード パス設定用のメタデータ */}
-        <meta
-          name="verovio-wasm-path"
-          content="https://cdn.jsdelivr.net/npm/verovio@6.1.0/wasm/"
-        />
-      </head>
       <body className="flex min-h-full flex-col">
         {children}
         <Script

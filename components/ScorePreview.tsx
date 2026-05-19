@@ -1,9 +1,8 @@
 'use client'
-import { MouseEventHandler, useEffect, useRef } from 'react'
+import { MouseEventHandler, useEffect } from 'react'
 
 import { midiToNoteName, parseMusicXmlForEvents } from '@/hooks/useAudioPlayer'
 import { useOSMD } from '@/hooks/useOSMD'
-import { Timemap } from '@/hooks/useVerovio'
 import { extractHarmonyLabels } from '@/lib/audioSync'
 import { useScoreStore } from '@/stores/useScoreStore'
 
@@ -14,10 +13,6 @@ import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 export const ScorePreview = () => {
   const musicXml = useScoreStore((state) => state.musicXml)
   const musicMxl = useScoreStore((state) => state.musicMxl)
-  const timemap = useScoreStore((state) => state.timemap)
-
-  // Verovio SVG レンダリング用の ref
-  const svgContainerRef = useRef<HTMLDivElement | null>(null)
 
   const { containerRef, renderError, isRendering, osmdRef } = useOSMD(
     musicXml,
@@ -33,52 +28,6 @@ export const ScorePreview = () => {
 
   const isLoadingScore = Boolean((isLoading || isRendering) && !musicXml)
 
-  /**
-   * Verovio SVG のクリックハンドラ
-   * .note 要素をターゲットにして、data-note-id を抽出
-   */
-  const attachNoteClickHandler = (containerElement: HTMLDivElement) => {
-    const handleClick = (e: Event) => {
-      if (!(e instanceof MouseEvent)) return
-      const target = e.target as Element
-
-      // Verovio SVG 内の note 要素を検索
-      const noteElement = target.closest('.note, [data-note-id]')
-
-      if (noteElement) {
-        const noteId = noteElement.getAttribute('data-note-id')
-        if (noteId && timemap) {
-          const noteData = timemap[noteId]
-          if (noteData) {
-            const player = useScoreStore.getState().player
-            if (player && typeof player.playNote === 'function') {
-              // Timemap から MIDI ノート番号を推定（簡易実装）
-              // TODO: Verovio timemap から正確な MIDI 値を抽出する処理を追加
-              player.playNote(noteId, 0.5)
-            }
-          }
-        }
-      }
-    }
-
-    containerElement.addEventListener('click', handleClick)
-
-    return () => {
-      containerElement.removeEventListener('click', handleClick)
-    }
-  }
-
-  // Verovio SVG が更新されたときに、クリックハンドラを再登録
-  useEffect(() => {
-    if (!svgContainerRef.current) return
-
-    const cleanup = attachNoteClickHandler(svgContainerRef.current)
-    return cleanup
-  }, [timemap])
-
-  /**
-   * 既存の OSMD ベースのクリックハンドラ（Phase 1 では保持）
-   */
   const handleScoreClick: MouseEventHandler<HTMLDivElement> = (e) => {
     if (!containerRef.current) return
     const target = e.target as Element
@@ -254,22 +203,12 @@ export const ScorePreview = () => {
               <AudioPlayer osmdRef={osmdRef} />
             </div>
           )}
-          {/* Verovio SVG コンテナ（Phase 2 以降で使用） */}
-          <div
-            ref={svgContainerRef}
-            className="w-full"
-            role="img"
-            aria-label="Verovio楽譜表示エリア"
-            style={{ display: timemap ? 'block' : 'none' }}
-          />
-          {/* OSMD SVG コンテナ（Phase 1 では継続使用） */}
           <div
             ref={containerRef}
             className="w-full"
             role="img"
             aria-label="楽譜表示エリア"
             onClick={handleScoreClick}
-            style={{ display: timemap ? 'none' : 'block' }}
           />
           {isLoadingScore && (
             <Alert variant="info">

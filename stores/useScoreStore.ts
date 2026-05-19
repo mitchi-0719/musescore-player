@@ -1,7 +1,5 @@
 import { create } from 'zustand'
 
-import type { Timemap } from '@/hooks/useVerovio'
-
 export type PlayerHandle = {
   play: () => Promise<void>
   pause: () => void
@@ -56,9 +54,6 @@ export interface ScoreState {
   highlightedMeasureNumber: number | null
   highlightedNoteTime: number | null
 
-  // Verovio Timemap
-  timemap: Timemap | null
-
   // 解析 / 再生 アクション
   setFileBinary: (binary: Uint8Array, fileName: string) => void
   setMusicXml: (xml: string) => void
@@ -68,8 +63,6 @@ export interface ScoreState {
   setMeasures: (measures: MeasureMetadata[]) => void
   setNotes: (notes: NoteMetadata[]) => void
   setTotalDuration: (duration: number) => void
-  setTimemap: (timemap: Timemap) => void
-  getTimemap: () => Timemap | null
   reset: () => void
 
   // 再生状態管理アクション
@@ -82,7 +75,7 @@ export interface ScoreState {
   setHighlightedNote: (time: number | null) => void
 }
 
-export const useScoreStore = create<ScoreState>((set, get) => ({
+export const useScoreStore = create<ScoreState>((set) => ({
   fileName: null,
   fileBinary: null,
   isLoading: false,
@@ -106,9 +99,6 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
   highlightedMeasureNumber: null,
   highlightedNoteTime: null,
 
-  // Verovio Timemap
-  timemap: null,
-
   setFileBinary: (binary, fileName) =>
     set({ fileBinary: binary, fileName, error: null }),
 
@@ -125,10 +115,6 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
   setNotes: (notes) => set({ notes }),
 
   setTotalDuration: (duration) => set({ totalDuration: duration }),
-
-  setTimemap: (timemap) => set({ timemap }),
-
-  getTimemap: () => get().timemap,
 
   reset: () =>
     set({
@@ -148,7 +134,6 @@ export const useScoreStore = create<ScoreState>((set, get) => ({
       volume: 1,
       highlightedMeasureNumber: null,
       highlightedNoteTime: null,
-      timemap: null,
     }),
 
   // playback actions
