@@ -5,7 +5,7 @@ import { useRef } from 'react'
 import { extractMeasuresAndNotes, getMeasureAtTime } from '@/lib/audioSync'
 import { type PlayerHandle, useScoreStore } from '@/stores/useScoreStore'
 
-type NoteEvent = { time: number; duration: number; midi: number }
+export type NoteEvent = { time: number; duration: number; midi: number }
 
 export function midiToNoteName(midi: number) {
   const names = [
