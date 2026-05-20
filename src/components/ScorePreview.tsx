@@ -11,12 +11,11 @@ import { ControlModal } from './ControlModal'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
 export const ScorePreview = () => {
-  const { musicXml, musicMxl, isLoading, player } = useScoreStore(
+  const { musicXml, musicMxl, isLoading } = useScoreStore(
     useShallow((state) => ({
       musicXml: state.musicXml,
       musicMxl: state.musicMxl,
       isLoading: state.isLoading,
-      player: state.player,
     }))
   )
 
@@ -27,18 +26,18 @@ export const ScorePreview = () => {
 
   const parsedEvents = useMemo(() => {
     if (!musicXml) return []
-    return parseMusicXmlForEvents(musicXml).events || []
+    return parseMusicXmlForEvents(musicXml)
   }, [musicXml])
+
+  const { play, stop, playNote } = useAudioPlayer(osmdRef, parsedEvents)
 
   const { handleScoreClick } = useNoteInteraction(
     containerRef,
     parsedEvents,
-    player
+    playNote
   )
 
   const isLoadingScore = Boolean((isLoading || isRendering) && !musicXml)
-
-  const { play, stop } = useAudioPlayer(osmdRef, parsedEvents)
 
   return (
     <section className="w-full">

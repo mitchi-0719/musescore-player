@@ -1,95 +1,91 @@
-import { useCallback, type MouseEventHandler, type RefObject } from 'react'
+import { type MouseEventHandler, type RefObject, useCallback } from 'react'
+
 import type { NoteEvent } from '../lib/musicXmlParser'
-import type { PlayerHandle } from '../stores/useScoreStore'
-import { midiToNoteName } from './useAudioPlayer'
+import type { PlayNoteFn } from './useAudioPlayer'
 
 export const useNoteInteraction = (
   containerRef: RefObject<HTMLDivElement | null>,
   parsedEvents: NoteEvent[],
-  player: PlayerHandle | null
+  playNote: PlayNoteFn | null
 ) => {
   const playClickedNote = useCallback(
     (clickedNote: Element) => {
-      if (!containerRef.current || !player || parsedEvents.length === 0) return
-
-      // DOMから音符要素を取得
-      const allNotes = Array.from(
-        containerRef.current.querySelectorAll(
-          'svg [class*=note], svg [class*=notehead]'
-        )
+      if (
+        !containerRef.current ||
+        typeof playNote !== 'function' ||
+        parsedEvents.length === 0
       )
-      const index = allNotes.indexOf(clickedNote as HTMLElement)
+        return
 
-      if (index !== -1 && parsedEvents[index]) {
-        const ev = parsedEvents[index]
-        if (typeof player.playNote === 'function') {
-          const noteName = midiToNoteName(ev.midi)
-          player.playNote(noteName, ev.duration || 0.5)
-        }
+      // Build a stable DOM note list and map to sorted parsed events
+      const selector =
+        '.vf-stavenote, .vf-notehead, .vf-note, svg [class*=note], svg [class*=notehead]'
+      const allNotes = Array.from(
+        containerRef.current.querySelectorAll(selector)
+      ) as Element[]
+
+      if (allNotes.length === 0) return
+
+      // parsedEvents are expected to be sorted by time; ensure consistent ordering
+      const events = parsedEvents
+        .slice()
+        .sort(
+          (a, b) =>
+            a.time - b.time ||
+            a.partId.localeCompare(b.partId) ||
+            a.voice.localeCompare(b.voice)
+        )
+
+      const idx = allNotes.indexOf(clickedNote as Element)
+      const ev = idx !== -1 && events[idx] ? events[idx] : null
+
+      if (ev) {
+        playNote(ev.samplerId, ev.playbackKey, ev.duration)
       }
     },
-    [containerRef, parsedEvents, player]
+    [containerRef, parsedEvents, playNote]
   )
 
   const handleScoreClick: MouseEventHandler<HTMLDivElement> = useCallback(
     (e) => {
       if (!containerRef.current) return
-      const target = e.target as Element
+      const clickTarget = e.target as Element
 
-      let hitNote: Element | null = null
-
-      const directNote = target.closest('.vf-stavenote')
+      // If user clicked directly on a note element, prefer that
+      const directNote = clickTarget.closest('.vf-stavenote')
       if (directNote) {
+        console.log('Direct note hit:', directNote)
         playClickedNote(directNote)
         return
       }
 
       const clickX = e.clientX
       const clickY = e.clientY
-      const HIT_RADIUS = 40
+      const HIT_RADIUS = 48
 
-      const measures = containerRef.current.querySelectorAll(
-        '.vf-measure, .vf-stave'
-      )
-      let targetMeasure: Element | null = null
+      const selector = '.vf-stavenote'
+      const allNotes = Array.from(
+        containerRef.current.querySelectorAll(selector)
+      ) as Element[]
+      if (allNotes.length === 0) return
 
-      for (const measure of measures) {
-        const rect = measure.getBoundingClientRect()
+      let closest: Element | null = null
+      let minDistance = Infinity
 
-        if (
-          clickX >= rect.left &&
-          clickX <= rect.right &&
-          clickY >= rect.top - HIT_RADIUS &&
-          clickY <= rect.bottom + HIT_RADIUS
-        ) {
-          targetMeasure = measure
-          break
+      allNotes.forEach((note) => {
+        const rect = note.getBoundingClientRect()
+        const cx = rect.left + rect.width / 2
+        const cy = rect.top + rect.height / 2
+        const d = Math.hypot(clickX - cx, clickY - cy)
+        if (d <= HIT_RADIUS && d < minDistance) {
+          minDistance = d
+          closest = note
         }
-      }
+      })
 
-      if (targetMeasure) {
-        const notesInMeasure = targetMeasure.querySelectorAll('.vf-stavenote')
-        let minDistance = Infinity
-
-        notesInMeasure.forEach((note) => {
-          const rect = note.getBoundingClientRect()
-          const noteCenterX = rect.left + rect.width / 2
-          const noteCenterY = rect.top + rect.height / 2
-
-          const distance = Math.sqrt(
-            Math.pow(clickX - noteCenterX, 2) +
-              Math.pow(clickY - noteCenterY, 2)
-          )
-
-          if (distance <= HIT_RADIUS && distance < minDistance) {
-            minDistance = distance
-            hitNote = note
-          }
-        })
-      }
-
-      if (hitNote) {
-        playClickedNote(hitNote)
+      if (closest) {
+        console.log('Closest note hit:', closest)
+        playClickedNote(closest)
       }
     },
     [containerRef, playClickedNote]
