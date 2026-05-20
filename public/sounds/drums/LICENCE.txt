@@ -1,0 +1,31 @@
+A collection of simple drum hits, usable as a sampled drum kit in a Web Audio application.
+
+Usage
+import {
+  kick,
+  snare,
+  hatClosed,
+  hatOpen,
+  tomLow,
+  tomMid,
+  tomHigh,
+  ride,
+  crash,
+} from "@teropa/drumkit";
+
+// Each import will be a URL from which the sample data may be loaded and decoded with a Web Audio AudioContext
+
+fetch(kick)
+  .then((res) => res.arrayBuffer())
+  .then((buf) => audioContext.decodeAudioData(buf));
+License
+Code is MIT licensed.
+
+Samples are from freesound.org:
+
+DWDS'S Deep House Drum kit, licensed under Creative Commons Attribution
+Stomachache's Analog Cymbal, license under Creative Commons 0.
+Karman Lyne's 808 toms, license under Creative Commons 0.
+
+
+Source: https://github.com/teropa/drumkit (See README for licenses)
