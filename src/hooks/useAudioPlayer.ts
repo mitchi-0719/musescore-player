@@ -1,4 +1,4 @@
-import { type RefObject, useCallback, useEffect, useRef } from 'react'
+import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
 
 import type { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 import * as Tone from 'tone'
@@ -26,162 +26,158 @@ export const midiToNoteName = (midi: number) => {
 }
 
 export const useAudioPlayer = (
-  osmdRef: RefObject<OpenSheetMusicDisplay | null>,
+  osmdInstance: RefObject<OpenSheetMusicDisplay | null>,
   parsedEvents: NoteEvent[]
 ) => {
-  const pianoSampler = useRef<Tone.Sampler | null>(null)
-  const drumSampler = useRef<Tone.Sampler | null>(null)
-  const toneRef = useRef<typeof Tone | null>(null)
+  const samplers = useRef<Record<string, Tone.Sampler>>({})
+  const [isPlaying, setIsPlaying] = useState(false)
+  const startTime = useRef(0)
+  const playedIndices = useRef(new Set<number>())
 
-  const isPlaying = useRef(false)
-  const startTime = useRef<number>(0)
-  const scheduledEventIndices = useRef<Set<number>>(new Set())
-
-  useEffect(() => {
-    let isMounted = true
-
-    const initTone = async () => {
-      try {
-        if (!isMounted) return
-
-        // Tone を保持するが、AudioContext の作成につながる Sampler は
-        // ユーザー操作時（play）まで遅延して生成する。
-        toneRef.current = Tone
-
-        console.log('Tone.js loaded (samplers will be created on first play)')
-      } catch (err) {
-        console.error('Failed to initialize Tone.js:', err)
-      }
-    }
-
-    initTone()
-
-    return () => {
-      isMounted = false
-      pianoSampler.current?.dispose()
-      drumSampler.current?.dispose()
-    }
+  const ticksToSeconds = useCallback((ticks: number) => {
+    return Tone.Time(`${ticks}i`).toSeconds()
   }, [])
 
-  const normalizePianoUrls = (map: Record<string, string>) => {
-    const out: Record<string, string> = {}
-    Object.entries(map).forEach(([k, v]) => {
-      // convert Ds4 -> D#4 style (s -> # before digits)
-      const nk = k.replace(/s(?=\d)/g, '#')
-      out[nk] = v
-    })
-    return out
-  }
+  useEffect(() => {
+    const instrumentConfigs = [
+      { id: 'piano', urls: PIANO_MAP, baseUrl: '/sounds/piano/' },
+      { id: 'drum', urls: DRUM_MAP, baseUrl: '/sounds/drums/' },
+      {
+        id: 'clap',
+        urls: { C4: 'Clap.wav' },
+        baseUrl: '/sounds/clap/',
+      },
+    ]
 
-  const normalizeDrumUrls = (map: Record<number, string>) => {
-    const out: Record<string, string> = {}
-    Object.entries(map).forEach(([k, v]) => {
-      out[String(k)] = v
-    })
-    return out
-  }
-
-  const ensureSamplers = useCallback(async () => {
-    const Tone = toneRef.current
-    if (!Tone) return
-
-    if (!pianoSampler.current) {
-      const pianoUrls = normalizePianoUrls(PIANO_MAP)
-      pianoSampler.current = new Tone.Sampler({
-        urls: pianoUrls,
-        baseUrl: '/sounds/piano/',
+    instrumentConfigs.forEach((config) => {
+      samplers.current[config.id] = new Tone.Sampler({
+        urls: config.urls,
+        baseUrl: config.baseUrl,
+        onload: () => {
+          console.log('[Audio] sampler loaded', {
+            samplerId: config.id,
+            baseUrl: config.baseUrl,
+          })
+        },
       }).toDestination()
-    }
+    })
 
-    if (!drumSampler.current) {
-      const drumUrls = normalizeDrumUrls(DRUM_MAP)
-      drumSampler.current = new Tone.Sampler({
-        urls: drumUrls,
-        baseUrl: '/sounds/drums/',
-      }).toDestination()
+    console.log('[Audio] sampler initialization complete', {
+      samplerIds: Object.keys(samplers.current),
+    })
+
+    const currentSamplers = samplers.current
+
+    return () => {
+      Object.values(currentSamplers).forEach((s) => s.dispose())
     }
   }, [])
 
   const play = useCallback(async () => {
-    const Tone = toneRef.current
-    if (!Tone) return
-
-    // AudioContext はユーザー操作の後に開始する必要がある
-    if (typeof Tone.start === 'function') {
-      try {
-        await Tone.start()
-      } catch (e) {
-        console.warn('Tone start failed:', e)
-      }
-    }
-
-    // start() 後に Sampler を生成（これで AudioContext の自動生成を避ける）
-    try {
-      await ensureSamplers()
-    } catch (e) {
-      console.warn('Failed to create samplers:', e)
-    }
-
-    isPlaying.current = true
+    await Tone.start()
     startTime.current = Tone.now()
-    scheduledEventIndices.current.clear()
-
-    if (osmdRef.current) {
-      osmdRef.current.cursor.show()
-    }
-  }, [osmdRef, ensureSamplers])
+    setIsPlaying(true)
+    playedIndices.current.clear()
+    console.log('[Audio] playback start', {
+      eventCount: parsedEvents.length,
+    })
+    osmdInstance.current?.cursor.show()
+  }, [osmdInstance, parsedEvents.length])
 
   const stop = useCallback(() => {
-    isPlaying.current = false
-    pianoSampler.current?.releaseAll()
-    drumSampler.current?.releaseAll()
-
-    if (osmdRef.current) {
-      osmdRef.current.cursor.hide()
-    }
-  }, [osmdRef])
+    setIsPlaying(false)
+    console.log('[Audio] playback stop')
+    osmdInstance.current?.cursor.reset()
+  }, [osmdInstance])
 
   const playNote = useCallback(
-    (midi: number, duration: string | number = '8n') => {
-      const sampler = midi < 60 ? drumSampler.current : pianoSampler.current
-      if (!sampler) return
-      sampler.triggerAttackRelease(midiToNoteName(midi), duration)
+    (samplerId: string, playbackKey: string, durationTicks: number) => {
+      const sampler = samplers.current[samplerId] ?? samplers.current.piano
+      if (!sampler || !sampler.loaded) return
+
+      console.log('[Audio] playNote called', {
+        samplerId,
+        playbackKey,
+        durationTicks,
+      })
+
+      sampler.triggerAttackRelease(
+        playbackKey,
+        ticksToSeconds(durationTicks),
+        Tone.now()
+      )
     },
-    []
+    [ticksToSeconds]
   )
 
-  const seek = useCallback((time: number) => {
-    if (!toneRef.current) return
-    startTime.current = toneRef.current.now() - time
-    scheduledEventIndices.current.clear()
-  }, [])
-
   useEffect(() => {
-    if (!isPlaying.current || !toneRef.current) return
+    if (!isPlaying) return
 
-    let animationFrameId: number
-    const update = () => {
-      if (!isPlaying.current || !toneRef.current) return
+    let frameId: number
 
-      const elapsed = toneRef.current.now() - startTime.current
+    const loop = () => {
+      if (!isPlaying) return
+      const elapsed = Tone.now() - startTime.current
 
-      parsedEvents.forEach((ev, index) => {
-        if (!scheduledEventIndices.current.has(index) && elapsed >= ev.time) {
-          playNote(ev.midi, ev.duration)
-          scheduledEventIndices.current.add(index)
+      parsedEvents.forEach((event, index) => {
+        const eventStart = ticksToSeconds(event.time)
 
-          if (osmdRef.current) {
-            osmdRef.current.cursor.next()
+        if (!playedIndices.current.has(index) && elapsed >= eventStart) {
+          const samplerId = event.samplerId
+          const sampler = samplers.current[samplerId] ?? samplers.current.piano
+
+          if (sampler.loaded) {
+            const noteToPlay = event.playbackKey
+
+            console.log('[Audio] note trigger', {
+              samplerId,
+              partId: event.partId,
+              partName: event.partName,
+              instrumentName: event.instrumentName,
+              note: event.note,
+              noteToPlay,
+              startTick: event.time,
+              durationTick: event.duration,
+            })
+
+            sampler.triggerAttackRelease(
+              noteToPlay,
+              ticksToSeconds(event.duration),
+              Tone.now()
+            )
+            playedIndices.current.add(index)
           }
         }
       })
-
-      animationFrameId = requestAnimationFrame(update)
+      frameId = requestAnimationFrame(loop)
     }
 
-    animationFrameId = requestAnimationFrame(update)
-    return () => cancelAnimationFrame(animationFrameId)
-  }, [parsedEvents, playNote, osmdRef])
+    frameId = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(frameId)
+  }, [isPlaying, parsedEvents, osmdInstance, ticksToSeconds])
 
-  return { play, stop, seek, playNote }
+  return { play, stop, playNote }
+}
+
+export type PlayNoteFn = (
+  samplerId: string,
+  playbackKey: string,
+  durationTicks: number
+) => void
+
+// React 型を使わず構造的に表現
+export const createPlayNote = (
+  samplersRef: { current: Record<string, Tone.Sampler> | undefined | null },
+  ticksToSecondsFn: (t: number) => number
+): PlayNoteFn => {
+  return (samplerId, playbackKey, durationTicks) => {
+    const sampler =
+      samplersRef.current?.[samplerId] ?? samplersRef.current?.piano
+    if (!sampler || !sampler.loaded) return
+    sampler.triggerAttackRelease(
+      playbackKey,
+      ticksToSecondsFn(durationTicks),
+      Tone.now()
+    )
+  }
 }
