@@ -7,24 +7,6 @@ import { DRUM_MAP } from '../constants/drum'
 import { PIANO_MAP } from '../constants/piano'
 import type { NoteEvent } from '../lib/musicXmlParser'
 
-export const midiToNoteName = (midi: number) => {
-  const names = [
-    'C',
-    'C#',
-    'D',
-    'D#',
-    'E',
-    'F',
-    'F#',
-    'G',
-    'G#',
-    'A',
-    'A#',
-    'B',
-  ]
-  return `${names[midi % 12]}${Math.floor(midi / 12) - 1}`
-}
-
 export const useAudioPlayer = (
   osmdInstance: RefObject<OpenSheetMusicDisplay | null>,
   parsedEvents: NoteEvent[]
@@ -81,14 +63,12 @@ export const useAudioPlayer = (
     console.log('[Audio] playback start', {
       eventCount: parsedEvents.length,
     })
-    osmdInstance.current?.cursor.show()
-  }, [osmdInstance, parsedEvents.length])
+  }, [parsedEvents.length])
 
   const stop = useCallback(() => {
     setIsPlaying(false)
     console.log('[Audio] playback stop')
-    osmdInstance.current?.cursor.reset()
-  }, [osmdInstance])
+  }, [])
 
   const playNote = useCallback(
     (samplerId: string, playbackKey: string, durationTicks: number) => {
@@ -123,6 +103,11 @@ export const useAudioPlayer = (
         const eventStart = ticksToSeconds(event.time)
 
         if (!playedIndices.current.has(index) && elapsed >= eventStart) {
+          playedIndices.current.add(index)
+
+          // 休符・タイ継続はインデックスだけ消費して音は鳴らさない
+          if (event.isRest || event.isTieContinuation) return
+
           const samplerId = event.samplerId
           const sampler = samplers.current[samplerId] ?? samplers.current.piano
 
@@ -145,7 +130,6 @@ export const useAudioPlayer = (
               ticksToSeconds(event.duration),
               Tone.now()
             )
-            playedIndices.current.add(index)
           }
         }
       })

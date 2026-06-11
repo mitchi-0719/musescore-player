@@ -14,7 +14,8 @@ export const useOSMD = (
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null)
 
   useEffect(() => {
-    if ((!musicXml && !musicMxl) || !containerRef.current) {
+    const container = containerRef.current
+    if ((!musicXml && !musicMxl) || !container) {
       setIsRendering(false)
       return
     }
@@ -29,9 +30,9 @@ export const useOSMD = (
         await waitFrame()
         await waitFrame()
 
-        if (isCancelled || !containerRef.current) return
+        if (isCancelled || !container) return
 
-        const osmd = new OpenSheetMusicDisplay(containerRef.current, {
+        const osmd = new OpenSheetMusicDisplay(container, {
           autoResize: true, // 画面サイズ変更時に自動リサイズ
           backend: 'svg', // デモと同じくっきりしたSVG描画
           drawTitle: true, // タイトルを描画する
@@ -78,8 +79,8 @@ export const useOSMD = (
         osmdRef.current.clear()
         osmdRef.current = null
       }
-      if (containerRef.current) {
-        containerRef.current.innerHTML = ''
+      if (container) {
+        container.innerHTML = ''
       }
     }
   }, [musicXml, musicMxl])

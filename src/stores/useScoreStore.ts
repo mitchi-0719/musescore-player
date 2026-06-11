@@ -53,6 +53,7 @@ export interface ScoreState {
   // ハイライト状態
   highlightedMeasureNumber: number | null
   highlightedNoteTime: number | null
+  selectedNoteId: string | null
 
   // 解析 / 再生 アクション
   setFileBinary: (binary: Uint8Array, fileName: string) => void
@@ -73,6 +74,7 @@ export interface ScoreState {
   setVolume: (v: number) => void
   setHighlightedMeasure: (measureNumber: number | null) => void
   setHighlightedNote: (time: number | null) => void
+  setSelectedNoteId: (noteId: string | null) => void
 }
 
 export const useScoreStore = create<ScoreState>((set) => ({
@@ -98,6 +100,7 @@ export const useScoreStore = create<ScoreState>((set) => ({
   // highlight state
   highlightedMeasureNumber: null,
   highlightedNoteTime: null,
+  selectedNoteId: null,
 
   setFileBinary: (binary, fileName) =>
     set({ fileBinary: binary, fileName, error: null }),
@@ -134,6 +137,7 @@ export const useScoreStore = create<ScoreState>((set) => ({
       volume: 1,
       highlightedMeasureNumber: null,
       highlightedNoteTime: null,
+      selectedNoteId: null,
     }),
 
   // playback actions
@@ -158,5 +162,9 @@ export const useScoreStore = create<ScoreState>((set) => ({
   setHighlightedNote: (time) =>
     set((state) =>
       state.highlightedNoteTime === time ? state : { highlightedNoteTime: time }
+    ),
+  setSelectedNoteId: (noteId) =>
+    set((state) =>
+      state.selectedNoteId === noteId ? state : { selectedNoteId: noteId }
     ),
 }))

@@ -1,6 +1,6 @@
-import { FileUploader } from "./components/FileUploader";
-import { Header } from "./components/layout/Header";
-import { ScorePreview } from "./components/ScorePreview";
+import { FileUploader } from './components/FileUploader'
+import { ScorePreview } from './components/ScorePreview'
+import { Header } from './components/layout/Header'
 
 export const App = () => {
   return (

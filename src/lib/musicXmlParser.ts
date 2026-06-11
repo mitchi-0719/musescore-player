@@ -20,6 +20,8 @@ export type NoteEvent = {
   lyric: string | null
   voice: string
   measureNumber: number
+  isRest: boolean
+  isTieContinuation: boolean
 }
 
 type PartMeta = {
@@ -41,6 +43,7 @@ type PendingTie = {
   startTime: number
   duration: number
   measureNumber: number
+  startEvent: NoteEvent
 }
 
 type ParsedNoteData = {
@@ -140,11 +143,14 @@ const getPartMetaMap = (doc: Document): Map<string, PartMeta> => {
 
     scorePart.querySelectorAll('midi-instrument').forEach((midiInstrument) => {
       const instrumentId = midiInstrument.getAttribute('id')
-      const midiUnpitched = Number(
+      // MusicXML の midi-unpitched は 1-indexed (1-128) なので、
+      // 標準 MIDI note number (0-127) に変換するために -1 する
+      const rawValue = Number(
         midiInstrument.querySelector('midi-unpitched')?.textContent || ''
       )
+      const midiUnpitched = rawValue - 1
 
-      if (instrumentId && !Number.isNaN(midiUnpitched)) {
+      if (instrumentId && !Number.isNaN(midiUnpitched) && midiUnpitched >= 0) {
         midiUnpitchedById.set(instrumentId, midiUnpitched)
       }
     })
@@ -403,6 +409,22 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
         const startTime = isChord ? currentTime : measureCursor
 
         if (isRest) {
+          events.push({
+            partId,
+            partName: partMeta.partName,
+            instrumentName: null,
+            samplerId: 'piano',
+            time: startTime,
+            duration,
+            note: 'rest',
+            playbackKey: '',
+            midi: 0,
+            lyric: null,
+            voice,
+            measureNumber: measureIndex + 1,
+            isRest: true,
+            isTieContinuation: false,
+          })
           if (!isChord) {
             voiceTicks.set(voice, startTime + duration)
             measureCursor = startTime + duration
@@ -429,21 +451,28 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
           pendingTie.duration += duration
           pendingTie.lyric = pendingTie.lyric ?? lyric
 
+          // タイ継続イベントを追加（SVG要素との対応を維持）
+          // クリック時は同じ音を鳴らし、再生ループではスキップされる
+          events.push({
+            partId: pendingTie.partId,
+            partName: pendingTie.partName,
+            instrumentName: pendingTie.instrumentName,
+            samplerId: pendingTie.samplerId,
+            time: startTime,
+            duration,
+            note: pendingTie.note,
+            playbackKey: pendingTie.playbackKey,
+            midi: pendingTie.midi,
+            lyric: pendingTie.lyric,
+            voice: pendingTie.voice,
+            measureNumber: measureIndex + 1,
+            isRest: false,
+            isTieContinuation: true,
+          })
+
           if (!tieStart) {
-            events.push({
-              partId: pendingTie.partId,
-              partName: pendingTie.partName,
-              instrumentName: pendingTie.instrumentName,
-              samplerId: pendingTie.samplerId,
-              time: pendingTie.startTime,
-              duration: pendingTie.duration,
-              note: pendingTie.note,
-              playbackKey: pendingTie.playbackKey,
-              midi: pendingTie.midi,
-              lyric: pendingTie.lyric,
-              voice: pendingTie.voice,
-              measureNumber: pendingTie.measureNumber,
-            })
+            // タイ終了: 開始イベントの duration をタイ全体の長さに更新
+            pendingTie.startEvent.duration = pendingTie.duration
             pendingTies.delete(tieKey)
           }
 
@@ -455,6 +484,25 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
         }
 
         if (tieStart && !tieStop) {
+          // タイ開始: イベントを追加し、pendingTie に参照を保持
+          const event: NoteEvent = {
+            partId,
+            partName: partMeta.partName,
+            instrumentName: parsedNote.instrumentName,
+            samplerId: parsedNote.samplerId,
+            time: startTime,
+            duration,
+            note: parsedNote.note,
+            playbackKey: parsedNote.playbackKey,
+            midi: parsedNote.midi,
+            lyric,
+            voice,
+            measureNumber: measureIndex + 1,
+            isRest: false,
+            isTieContinuation: false,
+          }
+          events.push(event)
+
           pendingTies.set(tieKey, {
             partId,
             partName: partMeta.partName,
@@ -468,6 +516,7 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
             startTime,
             duration,
             measureNumber: measureIndex + 1,
+            startEvent: event,
           })
 
           if (!isChord) {
@@ -478,7 +527,26 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
         }
 
         if (tieStart && tieStop) {
-          const mergedTie = pendingTie ?? {
+          // pendingTie が無い状態でのタイ開始+終了（エッジケース）
+          const event: NoteEvent = {
+            partId,
+            partName: partMeta.partName,
+            instrumentName: parsedNote.instrumentName,
+            samplerId: parsedNote.samplerId,
+            time: startTime,
+            duration,
+            note: parsedNote.note,
+            playbackKey: parsedNote.playbackKey,
+            midi: parsedNote.midi,
+            lyric,
+            voice,
+            measureNumber: measureIndex + 1,
+            isRest: false,
+            isTieContinuation: false,
+          }
+          events.push(event)
+
+          pendingTies.set(tieKey, {
             partId,
             partName: partMeta.partName,
             instrumentName: parsedNote.instrumentName,
@@ -489,13 +557,10 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
             midi: parsedNote.midi,
             lyric,
             startTime,
-            duration: 0,
+            duration,
             measureNumber: measureIndex + 1,
-          }
-
-          mergedTie.duration += duration
-          mergedTie.lyric = mergedTie.lyric ?? lyric
-          pendingTies.set(tieKey, mergedTie)
+            startEvent: event,
+          })
 
           if (!isChord) {
             voiceTicks.set(voice, startTime + duration)
@@ -517,6 +582,8 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
           lyric,
           voice,
           measureNumber: measureIndex + 1,
+          isRest: false,
+          isTieContinuation: false,
         })
 
         if (!isChord) {
@@ -527,20 +594,8 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
     })
 
     pendingTies.forEach((pendingTie) => {
-      events.push({
-        partId: pendingTie.partId,
-        partName: pendingTie.partName,
-        instrumentName: pendingTie.instrumentName,
-        samplerId: pendingTie.samplerId,
-        time: pendingTie.startTime,
-        duration: pendingTie.duration,
-        note: pendingTie.note,
-        playbackKey: pendingTie.playbackKey,
-        midi: pendingTie.midi,
-        lyric: pendingTie.lyric,
-        voice: pendingTie.voice,
-        measureNumber: pendingTie.measureNumber,
-      })
+      // タイ終了が見つからなかった場合: 開始イベントの duration を更新
+      pendingTie.startEvent.duration = pendingTie.duration
     })
   })
 
