@@ -33,6 +33,7 @@ export const ScorePreview = () => {
 
   const { handleScoreClick } = useNoteInteraction(
     containerRef,
+    osmdRef,
     parsedEvents,
     playNote
   )
@@ -50,7 +51,7 @@ export const ScorePreview = () => {
         <div className="overflow-x-auto rounded-lg bg-white">
           <div
             ref={containerRef}
-            className="w-full"
+            className="relative w-full"
             role="img"
             aria-label="楽譜表示エリア"
             onClick={handleScoreClick}

@@ -64,10 +64,6 @@ export const FileUploader = () => {
         setMusicXml(musicXml)
         setMusicMxl(musicMxl)
         setLoading(false)
-
-        console.log(
-          `✅ ファイル処理完了: ${file.name} → MusicXML (${(musicXml.length / 1024).toFixed(1)} KB)`
-        )
       } catch (err) {
         const message =
           err instanceof Error ? err.message : '不明なエラーが発生しました'
@@ -140,8 +136,6 @@ export const FileUploader = () => {
       })
 
       await processFile(demoFile)
-
-      console.log('✅ demo.mscz の処理完了')
     } catch (err) {
       const message =
         err instanceof Error ? err.message : '不明なエラーが発生しました'
