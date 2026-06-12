@@ -215,60 +215,67 @@ export function getSeekTimeForMeasure(
 }
 
 /**
- * MusicXML の harmony 要素から表示用のコードラベルを抽出する
+ * MusicXML の harmony 要素に表示用のコードラベル (text属性) を付与する
  */
-export function extractHarmonyLabels(musicXml: string): string[] {
+export function injectHarmonyText(musicXml: string): string {
   try {
     const doc = new DOMParser().parseFromString(musicXml, 'application/xml')
-    const harmonies = Array.from(doc.querySelectorAll('harmony'))
+    const harmonies = Array.from(doc.getElementsByTagName('harmony'))
 
-    return harmonies
-      .map((harmony) => {
-        const kind = harmony.querySelector('kind')
-        const rawKindLabel =
-          kind?.getAttribute('text')?.trim() || kind?.textContent?.trim() || ''
-        const kindLabel =
-          rawKindLabel &&
-          !['none', 'major', 'maj'].includes(rawKindLabel.toLowerCase())
-            ? rawKindLabel
+    harmonies.forEach((harmony) => {
+      const kind = harmony.getElementsByTagName('kind')[0]
+      if (!kind) return
+
+      const rawKindLabel =
+        kind.getAttribute('text')?.trim() || kind.textContent?.trim() || ''
+      const kindLabel =
+        rawKindLabel &&
+        !['none', 'major', 'maj'].includes(rawKindLabel.toLowerCase())
+          ? rawKindLabel
+          : ''
+
+      const rootStep = harmony
+        .getElementsByTagName('root-step')[0]
+        ?.textContent?.trim()
+      if (!rootStep) {
+        kind.setAttribute('text', kindLabel || 'N.C.')
+        return
+      }
+
+      const rootAlter = Number(
+        harmony.getElementsByTagName('root-alter')[0]?.textContent || '0'
+      )
+      const bassStep = harmony
+        .getElementsByTagName('bass-step')[0]
+        ?.textContent?.trim()
+      const bassAlter = Number(
+        harmony.getElementsByTagName('bass-alter')[0]?.textContent || '0'
+      )
+
+      const accidental =
+        rootAlter > 0
+          ? '#'.repeat(rootAlter)
+          : rootAlter < 0
+            ? 'b'.repeat(Math.abs(rootAlter))
+            : ''
+      const bassAccidental =
+        bassAlter > 0
+          ? '#'.repeat(bassAlter)
+          : bassAlter < 0
+            ? 'b'.repeat(Math.abs(bassAlter))
             : ''
 
-        const rootStep = harmony.querySelector('root-step')?.textContent?.trim()
-        if (!rootStep) {
-          return kindLabel || 'N.C.'
-        }
+      const base = `${rootStep}${accidental}${kindLabel}`.trim()
+      if (bassStep) {
+        kind.setAttribute('text', `${base}/${bassStep}${bassAccidental}`)
+      } else {
+        kind.setAttribute('text', base || 'N.C.')
+      }
+    })
 
-        const rootAlter = Number(
-          harmony.querySelector('root-alter')?.textContent || '0'
-        )
-        const bassStep = harmony.querySelector('bass-step')?.textContent?.trim()
-        const bassAlter = Number(
-          harmony.querySelector('bass-alter')?.textContent || '0'
-        )
-
-        const accidental =
-          rootAlter > 0
-            ? '#'.repeat(rootAlter)
-            : rootAlter < 0
-              ? 'b'.repeat(Math.abs(rootAlter))
-              : ''
-        const bassAccidental =
-          bassAlter > 0
-            ? '#'.repeat(bassAlter)
-            : bassAlter < 0
-              ? 'b'.repeat(Math.abs(bassAlter))
-              : ''
-
-        const base = `${rootStep}${accidental}${kindLabel}`.trim()
-        if (bassStep) {
-          return `${base}/${bassStep}${bassAccidental}`
-        }
-
-        return base || 'N.C.'
-      })
-      .filter((label) => label.length > 0)
+    return new XMLSerializer().serializeToString(doc)
   } catch (error) {
-    console.warn('Failed to extract harmony labels:', error)
-    return []
+    console.warn('Failed to inject harmony text:', error)
+    return musicXml
   }
 }
