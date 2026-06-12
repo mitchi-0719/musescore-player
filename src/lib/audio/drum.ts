@@ -6,8 +6,5 @@ export const initDrumSampler = () => {
   return new Tone.Sampler({
     urls: DRUM_MAP,
     baseUrl: '/sounds/drums/',
-    onload: () => {
-      console.log('🥁 カスタムドラムキットのロード完了！')
-    },
   }).toDestination()
 }

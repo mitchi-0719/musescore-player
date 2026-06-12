@@ -29,15 +29,7 @@ const sortEventsForSvgOrder = (events: NoteEvent[]) =>
     )
 
 const getUniquePartIds = (events: NoteEvent[]) => {
-  const partIds: string[] = []
-
-  events.forEach((event) => {
-    if (!partIds.includes(event.partId)) {
-      partIds.push(event.partId)
-    }
-  })
-
-  return partIds
+  return Array.from(new Set(events.map((event) => event.partId)))
 }
 
 const getPartIdsFromScore = (

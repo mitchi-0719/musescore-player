@@ -6,8 +6,5 @@ export const initPianoSampler = () => {
   return new Tone.Sampler({
     urls: PIANO_MAP,
     baseUrl: '/sounds/piano/',
-    onload: () => {
-      console.log('🎹 ピアノのロード完了！')
-    },
   }).toDestination()
 }

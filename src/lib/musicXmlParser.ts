@@ -341,11 +341,6 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
   const fallbackDivisions = getInitialDivisions(doc)
   const partMetaMap = getPartMetaMap(doc)
 
-  console.log('[MusicXML] parse start', {
-    tempo,
-    partCount: doc.querySelectorAll('part').length,
-  })
-
   doc.querySelectorAll('part').forEach((part) => {
     const partId = part.getAttribute('id') || 'P1'
     const partMeta = partMetaMap.get(partId) || {
@@ -356,12 +351,6 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
     const voiceTicks = new Map<string, number>()
     const pendingTies = new Map<string, PendingTie>()
     let currentDivisions = fallbackDivisions
-
-    console.log('[MusicXML] part detected', {
-      partId,
-      partName: partMeta.partName,
-      instrumentNames: Array.from(partMeta.instrumentNameById.values()),
-    })
 
     part.querySelectorAll('measure').forEach((measure, measureIndex) => {
       currentDivisions = getMeasureDivisions(measure, currentDivisions)

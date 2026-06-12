@@ -35,17 +35,7 @@ export const useAudioPlayer = (
       samplers.current[config.id] = new Tone.Sampler({
         urls: config.urls,
         baseUrl: config.baseUrl,
-        onload: () => {
-          console.log('[Audio] sampler loaded', {
-            samplerId: config.id,
-            baseUrl: config.baseUrl,
-          })
-        },
       }).toDestination()
-    })
-
-    console.log('[Audio] sampler initialization complete', {
-      samplerIds: Object.keys(samplers.current),
     })
 
     const currentSamplers = samplers.current
@@ -60,26 +50,16 @@ export const useAudioPlayer = (
     startTime.current = Tone.now()
     setIsPlaying(true)
     playedIndices.current.clear()
-    console.log('[Audio] playback start', {
-      eventCount: parsedEvents.length,
-    })
-  }, [parsedEvents.length])
+  }, [])
 
   const stop = useCallback(() => {
     setIsPlaying(false)
-    console.log('[Audio] playback stop')
   }, [])
 
   const playNote = useCallback(
     (samplerId: string, playbackKey: string, durationTicks: number) => {
       const sampler = samplers.current[samplerId] ?? samplers.current.piano
       if (!sampler || !sampler.loaded) return
-
-      console.log('[Audio] playNote called', {
-        samplerId,
-        playbackKey,
-        durationTicks,
-      })
 
       sampler.triggerAttackRelease(
         playbackKey,
@@ -113,17 +93,6 @@ export const useAudioPlayer = (
 
           if (sampler.loaded) {
             const noteToPlay = event.playbackKey
-
-            console.log('[Audio] note trigger', {
-              samplerId,
-              partId: event.partId,
-              partName: event.partName,
-              instrumentName: event.instrumentName,
-              note: event.note,
-              noteToPlay,
-              startTick: event.time,
-              durationTick: event.duration,
-            })
 
             sampler.triggerAttackRelease(
               noteToPlay,
