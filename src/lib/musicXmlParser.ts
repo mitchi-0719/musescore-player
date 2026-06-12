@@ -460,8 +460,10 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
           })
 
           if (!tieStart) {
-            // タイ終了: 開始イベントの duration をタイ全体の長さに更新
+            // タイ終了: 開始イベントの duration と lyric をタイ全体の情報で更新
             pendingTie.startEvent.duration = pendingTie.duration
+            pendingTie.startEvent.lyric =
+              pendingTie.startEvent.lyric ?? pendingTie.lyric
             pendingTies.delete(tieKey)
           }
 
@@ -583,8 +585,10 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
     })
 
     pendingTies.forEach((pendingTie) => {
-      // タイ終了が見つからなかった場合: 開始イベントの duration を更新
+      // タイ終了が見つからなかった場合: 開始イベントの duration と lyric を更新
       pendingTie.startEvent.duration = pendingTie.duration
+      pendingTie.startEvent.lyric =
+        pendingTie.startEvent.lyric ?? pendingTie.lyric
     })
   })
 

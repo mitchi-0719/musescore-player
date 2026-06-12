@@ -15,7 +15,7 @@ export const DRUM_MAP: Record<string, string> = {
   'C#2': 'Hi Studio.wav',
   D2: 'Tambourine.wav',
   'D#2': 'China Crash.wav',
-  E2: 'BellRide.wav',
+  E2: 'Ride1.wav',
   F2: 'Splash.wav',
   'F#2': 'Splash.wav',
   G2: 'Cow Bell.wav',
@@ -30,27 +30,26 @@ export const DRUM_SAMPLE_KEY_BY_LABEL: Record<string, string> = {
   electricsnare: 'D#1',
   lowfloortom: 'F1',
   closedhihat: 'E1',
-  highfloortom: 'F#1',
+  highfloortom: 'G1',
   pedalhihat: 'F#1',
-  lowtom: 'G1',
-  openhihat: 'G#1',
-  lowmidtom: 'A1',
-  himidtom: 'A#1',
+  lowtom: 'G#1',
+  openhihat: 'A1',
+  lowmidtom: 'A#1',
+  himidtom: 'B1',
   crashcymbal1: 'C2',
-  hightom: 'C2',
-  ridecymbal1: 'C#2',
-  chinacymbal: 'D2',
-  ridebell: 'D#2',
-  tambourine: 'E2',
+  hightom: 'C#2',
+  ridecymbal1: 'E2',
+  chinacymbal: 'D#2',
+  ridebell: 'E2',
+  tambourine: 'D2',
   splashcymbal: 'F2',
-  cowbell: 'F#2',
-  crashcymbal2: 'G2',
-  ridecymbal2: 'G#2',
+  cowbell: 'G2',
+  crashcymbal2: 'G#2',
+  ridecymbal2: 'E2',
   handclap: 'C4',
   clap: 'C4',
 }
 
-// Mapping from General MIDI unpitched (percussion) numbers to sampler keys.
 export const MIDI_UNPITCHED_TO_KEY: Record<number, string> = {
   35: 'C1', // Acoustic Bass Drum
   36: 'C1', // Bass Drum 1
@@ -68,10 +67,10 @@ export const MIDI_UNPITCHED_TO_KEY: Record<number, string> = {
   48: 'B1', // Hi-Mid Tom
   49: 'C2', // Crash Cymbal 1
   50: 'C#2', // High Tom
-  51: 'D2', // Ride Cymbal 1
+  51: 'E2', // Ride Cymbal 1
   52: 'D#2', // Chinese Cymbal
   53: 'E2', // Ride Bell
-  54: 'F2', // Tambourine
+  54: 'D2', // Tambourine
   55: 'F#2', // Splash Cymbal
   56: 'G2', // Cowbell
   57: 'G#2', // Crash Cymbal 2
