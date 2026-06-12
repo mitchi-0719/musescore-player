@@ -17,15 +17,15 @@ const STAFFLINE_SELECTOR = '[class~="staffline"]'
 const NOTE_SELECTOR = '.vf-stavenote'
 const SELECTED_NOTE_CLASS = 'osmd-note-selected'
 
-const sortEvents = (events: NoteEvent[]) =>
+const sortEventsForSvgOrder = (events: NoteEvent[]) =>
   events
     .slice()
     .sort(
       (a, b) =>
-        a.time - b.time ||
         a.measureNumber - b.measureNumber ||
-        a.partId.localeCompare(b.partId) ||
-        a.voice.localeCompare(b.voice)
+        a.voice.localeCompare(b.voice) ||
+        a.time - b.time ||
+        a.partId.localeCompare(b.partId)
     )
 
 const getUniquePartIds = (events: NoteEvent[]) => {
@@ -66,7 +66,7 @@ export const useNoteInteraction = (
     }))
   )
   const selectedNoteIdRef = useRef<string | null>(selectedNoteId)
-  const noteEventMapRef = useRef<Map<string, NoteEvent>>(new Map())
+  const noteEventMapRef = useRef<Map<string, NoteEvent[]>>(new Map())
 
   const syncSelectedClass = useCallback(
     (root: HTMLDivElement | null, noteId: string | null) => {
@@ -94,7 +94,7 @@ export const useNoteInteraction = (
       return
     }
 
-    const sortedEvents = sortEvents(parsedEvents)
+    const sortedEvents = sortEventsForSvgOrder(parsedEvents)
     const partIds = getPartIdsFromScore(osmdRef.current, sortedEvents)
     if (partIds.length === 0) {
       noteEventMapRef.current = new Map()
@@ -132,6 +132,18 @@ export const useNoteInteraction = (
         const event = partEvents[eventOffset]
         if (!event) return
 
+        const chordEvents: NoteEvent[] = [event]
+        let nextIdx = eventOffset + 1
+        while (nextIdx < partEvents.length) {
+          const next = partEvents[nextIdx]
+          if (next.time === event.time && next.voice === event.voice) {
+            chordEvents.push(next)
+            nextIdx++
+          } else {
+            break
+          }
+        }
+
         const noteId = `${partId}:${eventOffset}`
         noteElement.setAttribute('data-part-id', partId)
         noteElement.setAttribute('data-note-id', noteId)
@@ -140,8 +152,8 @@ export const useNoteInteraction = (
           noteId === selectedNoteIdRef.current
         )
 
-        noteEventMapRef.current.set(noteId, event)
-        eventOffset += 1
+        noteEventMapRef.current.set(noteId, chordEvents)
+        eventOffset = nextIdx
       })
 
       eventOffsets.set(partId, eventOffset)
@@ -184,18 +196,23 @@ export const useNoteInteraction = (
       const noteId = clickedNote.getAttribute('data-note-id')
       if (!noteId) return
 
-      console.log(noteEventMapRef.current)
-      const event = noteEventMapRef.current.get(noteId)
-      if (!event) return
+      const events = noteEventMapRef.current.get(noteId)
+      if (!events || events.length === 0) return
 
       // 休符・音符どちらでも選択状態（色）は更新する
       setSelectedNoteId(noteId)
 
-      // 休符の場合は音を鳴らさない
-      if (event.isRest) return
-
+      // 再生可能なイベント（休符・タイ継続を除く）をフィルタリング
+      const playableEvents = events.filter(
+        (e) => !e.isRest && !e.isTieContinuation
+      )
+      if (playableEvents.length === 0) return
       if (typeof playNote !== 'function') return
-      playNote(event.samplerId, event.playbackKey, event.duration)
+
+      // 和音の場合は全ての音を同時に鳴らす
+      playableEvents.forEach((event) => {
+        playNote(event.samplerId, event.playbackKey, event.duration)
+      })
     },
     [playNote, setSelectedNoteId]
   )
