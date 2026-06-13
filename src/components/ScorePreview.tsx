@@ -11,11 +11,13 @@ import { ControlModal } from './ControlModal'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
 export const ScorePreview = () => {
-  const { musicXml, musicMxl, isLoading } = useScoreStore(
+  console.log('[ScorePreview] rendering...')
+  const { musicXml, musicMxl, isLoading, isPlaying } = useScoreStore(
     useShallow((state) => ({
       musicXml: state.musicXml,
       musicMxl: state.musicMxl,
       isLoading: state.isLoading,
+      isPlaying: state.isPlaying,
     }))
   )
 
@@ -54,7 +56,7 @@ export const ScorePreview = () => {
             className="relative w-full"
             role="img"
             aria-label="楽譜表示エリア"
-            onClick={handleScoreClick}
+            onClick={isPlaying ? undefined : handleScoreClick}
           />
           {isLoadingScore && (
             <Alert variant="info">
