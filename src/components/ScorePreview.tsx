@@ -1,11 +1,15 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 
+import * as Tone from 'tone'
 import { useShallow } from 'zustand/shallow'
 
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
 import { useNoteInteraction } from '../hooks/useNoteInteraction'
 import { useOSMD } from '../hooks/useOSMD'
-import { parseMusicXmlForEvents } from '../lib/musicXmlParser'
+import {
+  type ParsedMusicData,
+  parseMusicXmlForEvents,
+} from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
 import { ControlModal } from './ControlModal'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
@@ -24,10 +28,17 @@ export const ScorePreview = () => {
     musicMxl
   )
 
-  const parsedEvents = useMemo(() => {
-    if (!musicXml) return []
+  const parsedData = useMemo((): ParsedMusicData => {
+    if (!musicXml) return { events: [], tempo: 120 }
     return parseMusicXmlForEvents(musicXml)
   }, [musicXml])
+
+  const parsedEvents = parsedData.events
+
+  // Transport BPM を楽譜のテンポに同期
+  useEffect(() => {
+    Tone.getTransport().bpm.value = parsedData.tempo
+  }, [parsedData.tempo])
 
   const { play, stop, playNote } = useAudioPlayer(osmdRef, parsedEvents)
 
@@ -48,10 +59,13 @@ export const ScorePreview = () => {
           <AlertDescription>{renderError}</AlertDescription>
         </Alert>
       ) : (
-        <div className="overflow-x-auto rounded-lg bg-white">
+        <div
+          className="overflow-x-auto rounded-lg bg-white"
+          style={{ contain: 'layout style' }}
+        >
           <div
             ref={containerRef}
-            className="relative w-full"
+            className="relative w-full bg-white"
             role="img"
             aria-label="楽譜表示エリア"
             onClick={handleScoreClick}
