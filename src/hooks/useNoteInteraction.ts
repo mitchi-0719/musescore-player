@@ -215,37 +215,88 @@ export const useNoteInteraction = (
       if (!(e.target instanceof Element)) return
       const clickTarget = e.target
 
+      const clickX = e.clientX
+      const clickY = e.clientY
+
+      console.log('[NoteClick] tap at', {
+        clickX,
+        clickY,
+        target: clickTarget.tagName,
+        className: clickTarget.className,
+      })
+
       const directNote = clickTarget.closest('[data-note-id]')
       if (directNote) {
+        const noteId = directNote.getAttribute('data-note-id')
+        const rect = directNote.getBoundingClientRect()
+        console.log('[NoteClick] DIRECT HIT', {
+          noteId,
+          rect: {
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+          },
+          distFromCenter: Math.hypot(
+            clickX - (rect.left + rect.width / 2),
+            clickY - (rect.top + rect.height / 2)
+          ),
+        })
         playClickedNote(directNote)
         return
       }
 
-      const clickX = e.clientX
-      const clickY = e.clientY
+      // タップ位置に最も近いノートを探索
       const HIT_RADIUS = 48
 
       const allNotes = Array.from(
         containerRef.current.querySelectorAll('[data-note-id]')
       )
+      console.log(
+        '[NoteClick] no direct hit, searching',
+        allNotes.length,
+        'notes within radius',
+        HIT_RADIUS
+      )
+
       if (allNotes.length === 0) return
 
       let closest: Element | null = null
       let minDistance = Infinity
+      // デバッグ: 上位3候補を記録
+      const top3: { noteId: string | null; dist: number }[] = []
 
       allNotes.forEach((note) => {
         const rect = note.getBoundingClientRect()
         const cx = rect.left + rect.width / 2
         const cy = rect.top + rect.height / 2
         const d = Math.hypot(clickX - cx, clickY - cy)
+
+        if (d <= HIT_RADIUS) {
+          top3.push({
+            noteId: note.getAttribute('data-note-id'),
+            dist: Math.round(d * 10) / 10,
+          })
+        }
+
         if (d <= HIT_RADIUS && d < minDistance) {
           minDistance = d
           closest = note
         }
       })
 
+      top3.sort((a, b) => a.dist - b.dist)
+      console.log('[NoteClick] candidates within radius:', top3.slice(0, 5))
+
       if (closest) {
+        const noteId = closest.getAttribute('data-note-id')
+        console.log('[NoteClick] PROXIMITY HIT', {
+          noteId,
+          distance: Math.round(minDistance * 10) / 10,
+        })
         playClickedNote(closest)
+      } else {
+        console.log('[NoteClick] no note found within radius')
       }
     },
     [containerRef, playClickedNote]
