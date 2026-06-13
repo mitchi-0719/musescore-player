@@ -169,11 +169,8 @@ export const useNoteInteraction = (
 
     refresh()
 
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null
-
     const observer = new MutationObserver(() => {
-      if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(refresh, 100)
+      refresh()
     })
 
     observer.observe(root, {
@@ -183,7 +180,6 @@ export const useNoteInteraction = (
 
     return () => {
       observer.disconnect()
-      if (debounceTimer) clearTimeout(debounceTimer)
     }
   }, [assignNoteIds, containerRef])
 
@@ -225,23 +221,24 @@ export const useNoteInteraction = (
         return
       }
 
-      // タップ位置に最も近いノートを探索
       const clickX = e.clientX
       const clickY = e.clientY
       const HIT_RADIUS = 48
 
-      const allNotes = containerRef.current.querySelectorAll('[data-note-id]')
+      const allNotes = Array.from(
+        containerRef.current.querySelectorAll('[data-note-id]')
+      )
       if (allNotes.length === 0) return
 
       let closest: Element | null = null
-      let minDistance = HIT_RADIUS
+      let minDistance = Infinity
 
       allNotes.forEach((note) => {
         const rect = note.getBoundingClientRect()
         const cx = rect.left + rect.width / 2
         const cy = rect.top + rect.height / 2
         const d = Math.hypot(clickX - cx, clickY - cy)
-        if (d < minDistance) {
+        if (d <= HIT_RADIUS && d < minDistance) {
           minDistance = d
           closest = note
         }

@@ -1,3 +1,5 @@
+import * as Tone from 'tone'
+
 import {
   DRUM_SAMPLE_KEY_BY_LABEL,
   MIDI_UNPITCHED_TO_KEY,
@@ -20,11 +22,6 @@ export type NoteEvent = {
   measureNumber: number
   isRest: boolean
   isTieContinuation: boolean
-}
-
-export type ParsedMusicData = {
-  events: NoteEvent[]
-  tempo: number
 }
 
 type PartMeta = {
@@ -328,16 +325,17 @@ const parseNoteData = (
   return null
 }
 
-export const parseMusicXmlForEvents = (musicXml: string): ParsedMusicData => {
+export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
   const parser = new DOMParser()
   const doc = parser.parseFromString(musicXml, 'application/xml')
 
   if (doc.querySelector('parsererror')) {
     console.warn('MusicXML の解析に失敗しました')
-    return { events: [], tempo: 120 }
+    return []
   }
 
   const tempo = getTempo(doc)
+  Tone.getTransport().bpm.value = tempo
 
   const events: NoteEvent[] = []
   const fallbackDivisions = getInitialDivisions(doc)
@@ -594,13 +592,10 @@ export const parseMusicXmlForEvents = (musicXml: string): ParsedMusicData => {
     })
   })
 
-  return {
-    events: events.sort(
-      (left, right) =>
-        left.time - right.time ||
-        left.partId.localeCompare(right.partId) ||
-        left.voice.localeCompare(right.voice)
-    ),
-    tempo,
-  }
+  return events.sort(
+    (left, right) =>
+      left.time - right.time ||
+      left.partId.localeCompare(right.partId) ||
+      left.voice.localeCompare(right.voice)
+  )
 }
