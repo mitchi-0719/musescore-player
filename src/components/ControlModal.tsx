@@ -1,4 +1,5 @@
-import { useState, type FC } from 'react'
+import { type FC, useState } from 'react'
+
 import { useOnOffState } from '../hooks/useOnOffState'
 import { Icon } from './ui/Icon'
 

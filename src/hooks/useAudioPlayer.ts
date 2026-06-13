@@ -7,24 +7,6 @@ import { DRUM_MAP } from '../constants/drum'
 import { PIANO_MAP } from '../constants/piano'
 import type { NoteEvent } from '../lib/musicXmlParser'
 
-export const midiToNoteName = (midi: number) => {
-  const names = [
-    'C',
-    'C#',
-    'D',
-    'D#',
-    'E',
-    'F',
-    'F#',
-    'G',
-    'G#',
-    'A',
-    'A#',
-    'B',
-  ]
-  return `${names[midi % 12]}${Math.floor(midi / 12) - 1}`
-}
-
 export const useAudioPlayer = (
   osmdInstance: RefObject<OpenSheetMusicDisplay | null>,
   parsedEvents: NoteEvent[]
@@ -53,17 +35,7 @@ export const useAudioPlayer = (
       samplers.current[config.id] = new Tone.Sampler({
         urls: config.urls,
         baseUrl: config.baseUrl,
-        onload: () => {
-          console.log('[Audio] sampler loaded', {
-            samplerId: config.id,
-            baseUrl: config.baseUrl,
-          })
-        },
       }).toDestination()
-    })
-
-    console.log('[Audio] sampler initialization complete', {
-      samplerIds: Object.keys(samplers.current),
     })
 
     const currentSamplers = samplers.current
@@ -78,28 +50,16 @@ export const useAudioPlayer = (
     startTime.current = Tone.now()
     setIsPlaying(true)
     playedIndices.current.clear()
-    console.log('[Audio] playback start', {
-      eventCount: parsedEvents.length,
-    })
-    osmdInstance.current?.cursor.show()
-  }, [osmdInstance, parsedEvents.length])
+  }, [])
 
   const stop = useCallback(() => {
     setIsPlaying(false)
-    console.log('[Audio] playback stop')
-    osmdInstance.current?.cursor.reset()
-  }, [osmdInstance])
+  }, [])
 
   const playNote = useCallback(
     (samplerId: string, playbackKey: string, durationTicks: number) => {
       const sampler = samplers.current[samplerId] ?? samplers.current.piano
       if (!sampler || !sampler.loaded) return
-
-      console.log('[Audio] playNote called', {
-        samplerId,
-        playbackKey,
-        durationTicks,
-      })
 
       sampler.triggerAttackRelease(
         playbackKey,
@@ -123,29 +83,22 @@ export const useAudioPlayer = (
         const eventStart = ticksToSeconds(event.time)
 
         if (!playedIndices.current.has(index) && elapsed >= eventStart) {
+          playedIndices.current.add(index)
+
+          // 休符・タイ継続はインデックスだけ消費して音は鳴らさない
+          if (event.isRest || event.isTieContinuation) return
+
           const samplerId = event.samplerId
           const sampler = samplers.current[samplerId] ?? samplers.current.piano
 
           if (sampler.loaded) {
             const noteToPlay = event.playbackKey
 
-            console.log('[Audio] note trigger', {
-              samplerId,
-              partId: event.partId,
-              partName: event.partName,
-              instrumentName: event.instrumentName,
-              note: event.note,
-              noteToPlay,
-              startTick: event.time,
-              durationTick: event.duration,
-            })
-
             sampler.triggerAttackRelease(
               noteToPlay,
               ticksToSeconds(event.duration),
               Tone.now()
             )
-            playedIndices.current.add(index)
           }
         }
       })

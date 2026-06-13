@@ -8,6 +8,7 @@
     "dev": "vite",
     "fetch_plan": "sh scripts/fetch_plan.sh",
     "format": "prettier --write .",
+    "format:check": "prettier . --check",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "prepare": "husky",

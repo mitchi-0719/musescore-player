@@ -24,3 +24,12 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.osmd-note-selected path,
+.osmd-note-selected ellipse,
+.osmd-note-selected circle,
+.osmd-note-selected polygon,
+.osmd-note-selected rect {
+  fill: #f59e0b !important;
+  stroke: #f59e0b !important;
+}
