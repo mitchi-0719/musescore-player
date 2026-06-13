@@ -1,6 +1,7 @@
-import { type FC, useState } from 'react'
+import { type FC } from 'react'
 
 import { useOnOffState } from '../hooks/useOnOffState'
+import { useScoreStore } from '../stores/useScoreStore'
 import { Icon } from './ui/Icon'
 
 type ControlModalProps = {
@@ -41,7 +42,7 @@ type HeaderProps = {
 }
 
 const DrawerHeader: FC<HeaderProps> = ({ isOpen, toggleOpen, play, stop }) => {
-  const [isPlaying, setIsPlaying] = useState(false)
+  const isPlaying = useScoreStore((state) => state.isPlaying)
 
   return (
     <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-1">
@@ -55,7 +56,6 @@ const DrawerHeader: FC<HeaderProps> = ({ isOpen, toggleOpen, play, stop }) => {
 
       <button
         onClick={() => {
-          setIsPlaying(!isPlaying)
           if (isPlaying) {
             stop()
           } else {

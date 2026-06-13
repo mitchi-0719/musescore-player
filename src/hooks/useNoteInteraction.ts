@@ -7,7 +7,6 @@ import {
 } from 'react'
 
 import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
-import { useShallow } from 'zustand/shallow'
 
 import type { NoteEvent } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
@@ -51,13 +50,8 @@ export const useNoteInteraction = (
   parsedEvents: NoteEvent[],
   playNote: PlayNoteFn | null
 ) => {
-  const { selectedNoteId, setSelectedNoteId } = useScoreStore(
-    useShallow((state) => ({
-      selectedNoteId: state.selectedNoteId,
-      setSelectedNoteId: state.setSelectedNoteId,
-    }))
-  )
-  const selectedNoteIdRef = useRef<string | null>(selectedNoteId)
+  const setSelectedNoteId = useScoreStore((state) => state.setSelectedNoteId)
+  const selectedNoteIdRef = useRef<string | null>(null)
   const noteEventMapRef = useRef<Map<string, NoteEvent[]>>(new Map())
 
   const syncSelectedClass = useCallback(
@@ -155,9 +149,26 @@ export const useNoteInteraction = (
   }, [containerRef, osmdRef, parsedEvents, syncSelectedClass])
 
   useEffect(() => {
-    selectedNoteIdRef.current = selectedNoteId
-    syncSelectedClass(containerRef.current, selectedNoteId)
-  }, [containerRef, selectedNoteId, syncSelectedClass])
+    const root = containerRef.current
+    if (!root) return
+
+    // 初期化時の値を反映
+    const initialNoteId = useScoreStore.getState().selectedNoteId
+    selectedNoteIdRef.current = initialNoteId
+    syncSelectedClass(root, initialNoteId)
+
+    const unsubscribe = useScoreStore.subscribe((state) => {
+      const nextSelectedNoteId = state.selectedNoteId
+      if (nextSelectedNoteId !== selectedNoteIdRef.current) {
+        selectedNoteIdRef.current = nextSelectedNoteId
+        syncSelectedClass(root, nextSelectedNoteId)
+      }
+    })
+
+    return () => {
+      unsubscribe()
+    }
+  }, [containerRef, syncSelectedClass])
 
   useEffect(() => {
     const root = containerRef.current
@@ -211,6 +222,14 @@ export const useNoteInteraction = (
 
   const handleScoreClick: MouseEventHandler<HTMLDivElement> = useCallback(
     (e) => {
+      // 再生中ならスクロール等の誤タッチを検知しないよう、タップイベントを即座に無視する
+      if (useScoreStore.getState().isPlaying) {
+        console.log(
+          '[NoteClick] Tap ignored because score playback is in progress'
+        )
+        return
+      }
+
       if (!containerRef.current) return
       if (!(e.target instanceof Element)) return
       const clickTarget = e.target
@@ -262,37 +281,57 @@ export const useNoteInteraction = (
       if (allNotes.length === 0) return
 
       let closest: Element | null = null
-      let minDistance = Infinity
-      // デバッグ: 上位3候補を記録
-      const top3: { noteId: string | null; dist: number }[] = []
+      let minRectDist = Infinity
+      let minCenterDist = Infinity
 
-      allNotes.forEach((note) => {
+      // デバッグ: 上位候補を記録
+      const top3: { noteId: string | null; rDist: number; cDist: number }[] = []
+
+      for (const note of allNotes) {
         const rect = note.getBoundingClientRect()
         const cx = rect.left + rect.width / 2
         const cy = rect.top + rect.height / 2
-        const d = Math.hypot(clickX - cx, clickY - cy)
 
-        if (d <= HIT_RADIUS) {
+        // バウンディングボックスの辺への最短距離（内部にいる場合は0）
+        const dx = Math.max(rect.left - clickX, 0, clickX - rect.right)
+        const dy = Math.max(rect.top - clickY, 0, clickY - rect.bottom)
+        const rDist = Math.sqrt(dx * dx + dy * dy)
+
+        // 中心への距離（タイブレーク用）
+        const cDist = Math.hypot(clickX - cx, clickY - cy)
+
+        if (rDist <= HIT_RADIUS) {
           top3.push({
             noteId: note.getAttribute('data-note-id'),
-            dist: Math.round(d * 10) / 10,
+            rDist: Math.round(rDist * 10) / 10,
+            cDist: Math.round(cDist * 10) / 10,
           })
         }
 
-        if (d <= HIT_RADIUS && d < minDistance) {
-          minDistance = d
-          closest = note
+        if (rDist <= HIT_RADIUS) {
+          if (
+            rDist < minRectDist ||
+            (rDist === minRectDist && cDist < minCenterDist)
+          ) {
+            minRectDist = rDist
+            minCenterDist = cDist
+            closest = note
+          }
         }
-      })
+      }
 
-      top3.sort((a, b) => a.dist - b.dist)
+      top3.sort((a, b) => {
+        if (a.rDist !== b.rDist) return a.rDist - b.rDist
+        return a.cDist - b.cDist
+      })
       console.log('[NoteClick] candidates within radius:', top3.slice(0, 5))
 
       if (closest) {
         const noteId = closest.getAttribute('data-note-id')
         console.log('[NoteClick] PROXIMITY HIT', {
           noteId,
-          distance: Math.round(minDistance * 10) / 10,
+          rDist: Math.round(minRectDist * 10) / 10,
+          cDist: Math.round(minCenterDist * 10) / 10,
         })
         playClickedNote(closest)
       } else {

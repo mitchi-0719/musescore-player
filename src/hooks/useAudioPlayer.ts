@@ -1,4 +1,4 @@
-import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
+import { type RefObject, useCallback, useEffect, useRef } from 'react'
 
 import type { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 import * as Tone from 'tone'
@@ -6,13 +6,15 @@ import * as Tone from 'tone'
 import { DRUM_MAP } from '../constants/drum'
 import { PIANO_MAP } from '../constants/piano'
 import type { NoteEvent } from '../lib/musicXmlParser'
+import { useScoreStore } from '../stores/useScoreStore'
 
 export const useAudioPlayer = (
   osmdInstance: RefObject<OpenSheetMusicDisplay | null>,
   parsedEvents: NoteEvent[]
 ) => {
   const samplers = useRef<Record<string, Tone.Sampler>>({})
-  const [isPlaying, setIsPlaying] = useState(false)
+  const isPlaying = useScoreStore((state) => state.isPlaying)
+  const setIsPlaying = useScoreStore((state) => state.setIsPlaying)
   const startTime = useRef(0)
   const playedIndices = useRef(new Set<number>())
 
@@ -50,11 +52,11 @@ export const useAudioPlayer = (
     startTime.current = Tone.now()
     setIsPlaying(true)
     playedIndices.current.clear()
-  }, [])
+  }, [setIsPlaying])
 
   const stop = useCallback(() => {
     setIsPlaying(false)
-  }, [])
+  }, [setIsPlaying])
 
   const playNote = useCallback(
     (samplerId: string, playbackKey: string, durationTicks: number) => {
