@@ -21,19 +21,6 @@ export const useOSMD = (
     }
 
     let isCancelled = false
-    let resizeTimeout: ReturnType<typeof setTimeout> | null = null
-
-    // 画面リサイズ時に楽譜を再描画（300ms デバウンス）
-    // autoResize: true を使わず手動で制御することで、
-    // モバイルのアドレスバー表示/非表示によるスクロール中の不要な再描画を防止
-    const handleResize = () => {
-      if (resizeTimeout) clearTimeout(resizeTimeout)
-      resizeTimeout = setTimeout(() => {
-        if (!isCancelled && osmdRef.current) {
-          osmdRef.current.render()
-        }
-      }, 300)
-    }
 
     const setup = async () => {
       try {
@@ -46,12 +33,12 @@ export const useOSMD = (
         if (isCancelled || !container) return
 
         const osmd = new OpenSheetMusicDisplay(container, {
-          autoResize: false, // 手動でデバウンスしたリサイズ処理を使用
-          backend: 'svg',
-          drawTitle: true,
-          drawSubtitle: true,
-          drawingParameters: 'default',
-          disableCursor: false,
+          autoResize: true, // 画面サイズ変更時に自動リサイズ
+          backend: 'svg', // デモと同じくっきりしたSVG描画
+          drawTitle: true, // タイトルを描画する
+          drawSubtitle: true, // サブタイトルを描画する
+          drawingParameters: 'default', // デモ標準の美しいレイアウト
+          disableCursor: false, // 必須：Tone.jsと同期する縦棒（カーソル）を使うため
         })
 
         osmdRef.current = osmd
@@ -74,9 +61,6 @@ export const useOSMD = (
         if (!isCancelled) {
           osmd.render()
           setIsRendering(false)
-
-          // 初回描画完了後にリサイズリスナーを登録
-          window.addEventListener('resize', handleResize)
         }
       } catch (err) {
         if (!isCancelled) {
@@ -91,8 +75,6 @@ export const useOSMD = (
 
     return () => {
       isCancelled = true
-      window.removeEventListener('resize', handleResize)
-      if (resizeTimeout) clearTimeout(resizeTimeout)
       if (osmdRef.current) {
         osmdRef.current.clear()
         osmdRef.current = null
