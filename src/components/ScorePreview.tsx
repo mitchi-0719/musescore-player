@@ -54,9 +54,10 @@ export const ScorePreview = () => {
           <div
             ref={containerRef}
             className="relative w-full"
+            style={{ touchAction: 'manipulation' }}
             role="img"
             aria-label="楽譜表示エリア"
-            onClick={isPlaying ? undefined : handleScoreClick}
+            onPointerDown={isPlaying ? undefined : handleScoreClick}
           />
           {isLoadingScore && (
             <Alert variant="info">
