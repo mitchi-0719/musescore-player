@@ -12,12 +12,11 @@ import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
 export const ScorePreview = () => {
   console.log('[ScorePreview] rendering...')
-  const { musicXml, musicMxl, isLoading, isPlaying } = useScoreStore(
+  const { musicXml, musicMxl, isLoading } = useScoreStore(
     useShallow((state) => ({
       musicXml: state.musicXml,
       musicMxl: state.musicMxl,
       isLoading: state.isLoading,
-      isPlaying: state.isPlaying,
     }))
   )
 
@@ -33,7 +32,7 @@ export const ScorePreview = () => {
 
   const { play, stop, playNote } = useAudioPlayer(parsedEvents)
 
-  const { handleScoreClick } = useNoteInteraction(
+  const { handlePointerDown, handlePointerUp } = useNoteInteraction(
     containerRef,
     osmdRef,
     parsedEvents,
@@ -62,7 +61,8 @@ export const ScorePreview = () => {
             }}
             role="img"
             aria-label="楽譜表示エリア"
-            onPointerDown={isPlaying ? undefined : handleScoreClick}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
           />
           {isLoadingScore && (
             <Alert variant="info">
