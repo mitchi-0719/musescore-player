@@ -2,46 +2,89 @@ import {
   type MouseEventHandler,
   type RefObject,
   useCallback,
-  useEffect,
   useRef,
 } from 'react'
 
-import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
+import { OpenSheetMusicDisplay, PointF2D } from 'opensheetmusicdisplay'
 
 import type { NoteEvent } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
 import type { PlayNoteFn } from './useAudioPlayer'
 
-const STAFFLINE_SELECTOR = '[class~="staffline"]'
-const NOTE_SELECTOR = '.vf-stavenote'
-const SELECTED_NOTE_CLASS = 'osmd-note-selected'
+const SEMITONE_TO_NOTE = [
+  'C',
+  'C#',
+  'D',
+  'D#',
+  'E',
+  'F',
+  'F#',
+  'G',
+  'G#',
+  'A',
+  'A#',
+  'B',
+]
 
-const sortEventsForSvgOrder = (events: NoteEvent[]) =>
-  events
-    .slice()
-    .sort(
-      (a, b) =>
-        a.measureNumber - b.measureNumber ||
-        a.voice.localeCompare(b.voice) ||
-        a.time - b.time ||
-        a.partId.localeCompare(b.partId)
-    )
-
-const getUniquePartIds = (events: NoteEvent[]) => {
-  return Array.from(new Set(events.map((event) => event.partId)))
+const getSvgElement = (note: object): SVGElement | null => {
+  if ('getSVGGElement' in note && typeof note.getSVGGElement === 'function') {
+    return note.getSVGGElement() as SVGElement | null
+  }
+  return null
 }
 
-const getPartIdsFromScore = (
-  osmd: OpenSheetMusicDisplay | null,
-  events: NoteEvent[]
-) => {
-  const instrumentIds = osmd?.Sheet?.Instruments.map((instrument) => {
-    return instrument.IdString
-  }).filter((partId): partId is string => partId.length > 0)
+const clearNoteHighlight = (note: object) => {
+  const svgElement = getSvgElement(note)
+  if (svgElement) {
+    svgElement.style.fill = ''
+    svgElement.style.stroke = ''
+    const children = svgElement.querySelectorAll('*')
+    children.forEach((child) => {
+      if (child instanceof SVGElement || child instanceof HTMLElement) {
+        child.style.fill = ''
+        child.style.stroke = ''
+      }
+    })
+  } else if ('setColor' in note && typeof note.setColor === 'function') {
+    try {
+      note.setColor('#000000', {
+        applyToBeams: true,
+        applyToFlag: true,
+        applyToNoteheads: true,
+        applyToStem: true,
+        applyToTies: true,
+      })
+    } catch {
+      // ignore
+    }
+  }
+}
 
-  return instrumentIds && instrumentIds.length > 0
-    ? instrumentIds
-    : getUniquePartIds(events)
+const applyNoteHighlight = (note: object) => {
+  const svgElement = getSvgElement(note)
+  if (svgElement) {
+    svgElement.style.fill = '#FF0000'
+    svgElement.style.stroke = '#FF0000'
+    const children = svgElement.querySelectorAll('*')
+    children.forEach((child) => {
+      if (child instanceof SVGElement || child instanceof HTMLElement) {
+        child.style.fill = '#FF0000'
+        child.style.stroke = '#FF0000'
+      }
+    })
+  } else if ('setColor' in note && typeof note.setColor === 'function') {
+    try {
+      note.setColor('#FF0000', {
+        applyToBeams: true,
+        applyToFlag: true,
+        applyToNoteheads: true,
+        applyToStem: true,
+        applyToTies: true,
+      })
+    } catch {
+      // ignore
+    }
+  }
 }
 
 export const useNoteInteraction = (
@@ -50,179 +93,10 @@ export const useNoteInteraction = (
   parsedEvents: NoteEvent[],
   playNote: PlayNoteFn | null
 ) => {
-  const setSelectedNoteId = useScoreStore((state) => state.setSelectedNoteId)
-  const selectedNoteIdRef = useRef<string | null>(null)
-  const noteEventMapRef = useRef<Map<string, NoteEvent[]>>(new Map())
-
-  const syncSelectedClass = useCallback(
-    (root: HTMLDivElement | null, noteId: string | null) => {
-      if (!root) return
-
-      const noteElements = Array.from(root.querySelectorAll('[data-note-id]'))
-      noteElements.forEach((noteElement) => {
-        const isSelected = noteElement.getAttribute('data-note-id') === noteId
-        noteElement.classList.toggle(SELECTED_NOTE_CLASS, isSelected)
-      })
-    },
-    []
-  )
-
-  const assignNoteIds = useCallback(() => {
-    const root = containerRef.current
-    if (!root || parsedEvents.length === 0) {
-      noteEventMapRef.current = new Map()
-      return
-    }
-
-    const stafflines = Array.from(root.querySelectorAll(STAFFLINE_SELECTOR))
-    if (stafflines.length === 0) {
-      noteEventMapRef.current = new Map()
-      return
-    }
-
-    const sortedEvents = sortEventsForSvgOrder(parsedEvents)
-    const partIds = getPartIdsFromScore(osmdRef.current, sortedEvents)
-    if (partIds.length === 0) {
-      noteEventMapRef.current = new Map()
-      return
-    }
-
-    const eventsByPartId = new Map<string, NoteEvent[]>()
-    partIds.forEach((partId) => {
-      eventsByPartId.set(partId, [])
-    })
-
-    sortedEvents.forEach((event) => {
-      const partEvents = eventsByPartId.get(event.partId)
-      if (partEvents) {
-        partEvents.push(event)
-      }
-    })
-
-    const eventOffsets = new Map<string, number>()
-    partIds.forEach((partId) => {
-      eventOffsets.set(partId, 0)
-    })
-
-    noteEventMapRef.current = new Map()
-
-    stafflines.forEach((staffline, stafflineIndex) => {
-      const partId = partIds[stafflineIndex % partIds.length]
-      const partEvents = eventsByPartId.get(partId) || []
-      let eventOffset = eventOffsets.get(partId) || 0
-
-      staffline.setAttribute('data-part-id', partId)
-
-      const noteElements = Array.from(staffline.querySelectorAll(NOTE_SELECTOR))
-      noteElements.forEach((noteElement) => {
-        const event = partEvents[eventOffset]
-        if (!event) return
-
-        const chordEvents: NoteEvent[] = [event]
-        let nextIdx = eventOffset + 1
-        while (nextIdx < partEvents.length) {
-          const next = partEvents[nextIdx]
-          if (next.time === event.time && next.voice === event.voice) {
-            chordEvents.push(next)
-            nextIdx++
-          } else {
-            break
-          }
-        }
-
-        const noteId = `${partId}:${eventOffset}`
-        noteElement.setAttribute('data-part-id', partId)
-        noteElement.setAttribute('data-note-id', noteId)
-        noteElement.classList.toggle(
-          SELECTED_NOTE_CLASS,
-          noteId === selectedNoteIdRef.current
-        )
-
-        noteEventMapRef.current.set(noteId, chordEvents)
-        eventOffset = nextIdx
-      })
-
-      eventOffsets.set(partId, eventOffset)
-    })
-
-    syncSelectedClass(root, selectedNoteIdRef.current)
-  }, [containerRef, osmdRef, parsedEvents, syncSelectedClass])
-
-  useEffect(() => {
-    const root = containerRef.current
-    if (!root) return
-
-    // 初期化時の値を反映
-    const initialNoteId = useScoreStore.getState().selectedNoteId
-    selectedNoteIdRef.current = initialNoteId
-    syncSelectedClass(root, initialNoteId)
-
-    const unsubscribe = useScoreStore.subscribe((state) => {
-      const nextSelectedNoteId = state.selectedNoteId
-      if (nextSelectedNoteId !== selectedNoteIdRef.current) {
-        selectedNoteIdRef.current = nextSelectedNoteId
-        syncSelectedClass(root, nextSelectedNoteId)
-      }
-    })
-
-    return () => {
-      unsubscribe()
-    }
-  }, [containerRef, syncSelectedClass])
-
-  useEffect(() => {
-    const root = containerRef.current
-    if (!root) return
-
-    const refresh = () => {
-      assignNoteIds()
-    }
-
-    refresh()
-
-    const observer = new MutationObserver(() => {
-      refresh()
-    })
-
-    observer.observe(root, {
-      childList: true,
-      subtree: true,
-    })
-
-    return () => {
-      observer.disconnect()
-    }
-  }, [assignNoteIds, containerRef])
-
-  const playClickedNote = useCallback(
-    (clickedNote: Element) => {
-      const noteId = clickedNote.getAttribute('data-note-id')
-      if (!noteId) return
-
-      const events = noteEventMapRef.current.get(noteId)
-      if (!events || events.length === 0) return
-
-      // 休符・音符どちらでも選択状態（色）は更新する
-      setSelectedNoteId(noteId)
-
-      // 再生可能なイベント（休符・タイ継続を除く）をフィルタリング
-      const playableEvents = events.filter(
-        (e) => !e.isRest && !e.isTieContinuation
-      )
-      if (playableEvents.length === 0) return
-      if (typeof playNote !== 'function') return
-
-      // 和音の場合は全ての音を同時に鳴らす
-      playableEvents.forEach((event) => {
-        playNote(event.samplerId, event.playbackKey, event.duration)
-      })
-    },
-    [playNote, setSelectedNoteId]
-  )
+  const previousNoteRef = useRef<object | null>(null)
 
   const handleScoreClick: MouseEventHandler<HTMLDivElement> = useCallback(
     (e) => {
-      // 再生中ならスクロール等の誤タッチを検知しないよう、タップイベントを即座に無視する
       if (useScoreStore.getState().isPlaying) {
         console.log(
           '[NoteClick] Tap ignored because score playback is in progress'
@@ -230,115 +104,134 @@ export const useNoteInteraction = (
         return
       }
 
-      if (!containerRef.current) return
-      if (!(e.target instanceof Element)) return
-      const clickTarget = e.target
+      if (!containerRef.current || !osmdRef.current) return
 
-      const clickX = e.clientX
-      const clickY = e.clientY
+      const osmd = osmdRef.current
+      const svg = containerRef.current.querySelector('svg')
+      if (!svg) return
 
-      console.log('[NoteClick] tap at', {
-        clickX,
-        clickY,
-        target: clickTarget.tagName,
-        className: clickTarget.className,
-      })
+      const svgRect = svg.getBoundingClientRect()
 
-      const directNote = clickTarget.closest('[data-note-id]')
-      if (directNote) {
-        const noteId = directNote.getAttribute('data-note-id')
-        const rect = directNote.getBoundingClientRect()
-        console.log('[NoteClick] DIRECT HIT', {
-          noteId,
-          rect: {
-            left: rect.left,
-            top: rect.top,
-            width: rect.width,
-            height: rect.height,
-          },
-          distFromCenter: Math.hypot(
-            clickX - (rect.left + rect.width / 2),
-            clickY - (rect.top + rect.height / 2)
-          ),
-        })
-        playClickedNote(directNote)
+      const osmdX = (e.clientX - svgRect.left) / (10 * osmd.zoom)
+      const osmdY = (e.clientY - svgRect.top) / (10 * osmd.zoom)
+
+      const clickPoint = new PointF2D(osmdX, osmdY)
+      const maxDistance = new PointF2D(3, 3)
+
+      const graphicalNote = osmd.GraphicSheet.GetNearestNote(
+        clickPoint,
+        maxDistance
+      )
+
+      if (!graphicalNote) {
+        console.log('[NoteClick] No note found near the click point.')
         return
       }
 
-      // タップ位置に最も近いノートを探索
-      const HIT_RADIUS = 48
+      const sourceNote = graphicalNote.sourceNote
 
-      const allNotes = Array.from(
-        containerRef.current.querySelectorAll('[data-note-id]')
+      // 前回のハイライトを解除
+      if (
+        previousNoteRef.current &&
+        previousNoteRef.current !== graphicalNote
+      ) {
+        clearNoteHighlight(previousNoteRef.current)
+      }
+
+      // 今回の音符をハイライト
+      applyNoteHighlight(graphicalNote)
+      previousNoteRef.current = graphicalNote
+
+      if (sourceNote.isRest()) {
+        console.log('[NoteClick] Clicked on a rest.')
+        return
+      }
+
+      // OSMDの表示ピッチから推定される note string を計算
+      const pitch = sourceNote.TransposedPitch || sourceNote.Pitch
+      const fundamental = pitch.FundamentalNote
+      const octave = pitch.Octave
+      const alter = pitch.AccidentalHalfTones
+
+      const semitone = fundamental + alter
+      const octaveShift = Math.floor(semitone / 12)
+      const normalizedSemitone = ((semitone % 12) + 12) % 12
+      const finalOctave = octave + octaveShift
+
+      const osmdPitchStr = `${SEMITONE_TO_NOTE[normalizedSemitone]}${finalOctave}`
+
+      // parsedEventsの中から、クリックした音符に該当するイベントを探す
+      const measureNum = sourceNote.SourceMeasure.MeasureNumber
+      const timeInTicks = Math.round(
+        sourceNote.getAbsoluteTimestamp().RealValue * 4 * 192
       )
-      console.log(
-        '[NoteClick] no direct hit, searching',
-        allNotes.length,
-        'notes within radius',
-        HIT_RADIUS
+
+      const eventsInMeasure = parsedEvents.filter(
+        (ev) => ev.measureNumber === measureNum
       )
 
-      if (allNotes.length === 0) return
+      let bestEvent: NoteEvent | null = null
+      let minTimeDiff = Infinity
 
-      let closest: Element | null = null
-      let minRectDist = Infinity
-      let minCenterDist = Infinity
-
-      // デバッグ: 上位候補を記録
-      const top3: { noteId: string | null; rDist: number; cDist: number }[] = []
-
-      for (const note of allNotes) {
-        const rect = note.getBoundingClientRect()
-        const cx = rect.left + rect.width / 2
-        const cy = rect.top + rect.height / 2
-
-        // バウンディングボックスの辺への最短距離（内部にいる場合は0）
-        const dx = Math.max(rect.left - clickX, 0, clickX - rect.right)
-        const dy = Math.max(rect.top - clickY, 0, clickY - rect.bottom)
-        const rDist = Math.sqrt(dx * dx + dy * dy)
-
-        // 中心への距離（タイブレーク用）
-        const cDist = Math.hypot(clickX - cx, clickY - cy)
-
-        if (rDist <= HIT_RADIUS) {
-          top3.push({
-            noteId: note.getAttribute('data-note-id'),
-            rDist: Math.round(rDist * 10) / 10,
-            cDist: Math.round(cDist * 10) / 10,
-          })
+      const eventsAtTime: NoteEvent[] = []
+      const activeEventsInMeasure = eventsInMeasure.filter(
+        (ev) => !ev.isRest && !ev.isTieContinuation
+      )
+      for (const ev of activeEventsInMeasure) {
+        const diff = Math.abs(ev.time - timeInTicks)
+        if (diff < minTimeDiff) {
+          minTimeDiff = diff
+          eventsAtTime.length = 0
+          eventsAtTime.push(ev)
+        } else if (diff === minTimeDiff) {
+          eventsAtTime.push(ev)
         }
+      }
 
-        if (rDist <= HIT_RADIUS) {
-          if (
-            rDist < minRectDist ||
-            (rDist === minRectDist && cDist < minCenterDist)
-          ) {
-            minRectDist = rDist
-            minCenterDist = cDist
-            closest = note
+      // 四分音符は 192 ティックなので、許容誤差を 50 ティックに設定
+      if (eventsAtTime.length > 0 && minTimeDiff < 50) {
+        bestEvent = eventsAtTime[0]
+        for (const ev of eventsAtTime) {
+          if (ev.displayPitch === osmdPitchStr) {
+            bestEvent = ev
+            break
           }
         }
       }
 
-      top3.sort((a, b) => {
-        if (a.rDist !== b.rDist) return a.rDist - b.rDist
-        return a.cDist - b.cDist
-      })
-      console.log('[NoteClick] candidates within radius:', top3.slice(0, 5))
+      let instrumentName = 'piano'
+      try {
+        if (sourceNote.ParentStaff?.ParentInstrument?.Name) {
+          instrumentName = sourceNote.ParentStaff.ParentInstrument.Name
+        }
+      } catch {
+        console.warn('Could not extract instrument name, defaulting to piano.')
+      }
 
-      if (closest) {
-        const noteId = closest.getAttribute('data-note-id')
-        console.log('[NoteClick] PROXIMITY HIT', {
-          noteId,
-          rDist: Math.round(minRectDist * 10) / 10,
-          cDist: Math.round(minCenterDist * 10) / 10,
-        })
-        playClickedNote(closest)
-      } else {
-        console.log('[NoteClick] no note found within radius')
+      const samplerId = bestEvent
+        ? bestEvent.samplerId
+        : instrumentName.toLowerCase().includes('drum')
+          ? 'drum'
+          : 'piano'
+      const playbackKey = bestEvent ? bestEvent.playbackKey : osmdPitchStr
+      const durationBeats = bestEvent
+        ? bestEvent.duration / 192
+        : sourceNote.Length.RealValue * 4
+
+      console.log('[NoteClick] Nearest note found:', {
+        instrumentName,
+        playbackKey,
+        durationBeats,
+        matchedEvent: bestEvent,
+        minTimeDiff,
+      })
+
+      if (playNote) {
+        playNote(samplerId, playbackKey, durationBeats)
       }
     },
-    [containerRef, playClickedNote]
+    [containerRef, osmdRef, playNote, parsedEvents]
   )
+
   return { handleScoreClick }
 }

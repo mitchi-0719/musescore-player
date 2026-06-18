@@ -58,18 +58,16 @@ export const useAudioPlayer = (
     setIsPlaying(false)
   }, [setIsPlaying])
 
-  const playNote = useCallback(
-    (samplerId: string, playbackKey: string, durationTicks: number) => {
+  const playNote: PlayNoteFn = useCallback(
+    (samplerId, playbackKey, durationBeats) => {
       const sampler = samplers.current[samplerId] ?? samplers.current.piano
       if (!sampler || !sampler.loaded) return
 
-      sampler.triggerAttackRelease(
-        playbackKey,
-        ticksToSeconds(durationTicks),
-        Tone.now()
-      )
+      const durationSeconds = durationBeats * Tone.Time('4n').toSeconds()
+
+      sampler.triggerAttackRelease(playbackKey, durationSeconds, Tone.now())
     },
-    [ticksToSeconds]
+    []
   )
 
   useEffect(() => {
@@ -116,23 +114,19 @@ export const useAudioPlayer = (
 
 export type PlayNoteFn = (
   samplerId: string,
-  playbackKey: string,
-  durationTicks: number
+  playbackKey: string | number,
+  durationBeats: number
 ) => void
 
 // React 型を使わず構造的に表現
-export const createPlayNote = (
-  samplersRef: { current: Record<string, Tone.Sampler> | undefined | null },
-  ticksToSecondsFn: (t: number) => number
-): PlayNoteFn => {
-  return (samplerId, playbackKey, durationTicks) => {
+export const createPlayNote = (samplersRef: {
+  current: Record<string, Tone.Sampler> | undefined | null
+}): PlayNoteFn => {
+  return (samplerId, playbackKey, durationBeats) => {
     const sampler =
       samplersRef.current?.[samplerId] ?? samplersRef.current?.piano
     if (!sampler || !sampler.loaded) return
-    sampler.triggerAttackRelease(
-      playbackKey,
-      ticksToSecondsFn(durationTicks),
-      Tone.now()
-    )
+    const durationSeconds = durationBeats * Tone.Time('4n').toSeconds()
+    sampler.triggerAttackRelease(playbackKey, durationSeconds, Tone.now())
   }
 }
