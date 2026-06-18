@@ -1,0 +1,17 @@
+{
+  "name": "MuseScore Player",
+  "short_name": "MS Player",
+  "description": "MuseScore の .mscz ファイルをブラウザ上で解析・楽譜表示・再生する Web アプリです。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "192x192 512x512 64x64 32x32 24x24 16x16",
+      "type": "image/x-icon",
+      "purpose": "any"
+    }
+  ]
+}
