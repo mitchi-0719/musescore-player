@@ -11,6 +11,7 @@ import { ControlModal } from './ControlModal'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
 export const ScorePreview = () => {
+  console.log('[ScorePreview] rendering...')
   const { musicXml, musicMxl, isLoading } = useScoreStore(
     useShallow((state) => ({
       musicXml: state.musicXml,
@@ -29,9 +30,9 @@ export const ScorePreview = () => {
     return parseMusicXmlForEvents(musicXml)
   }, [musicXml])
 
-  const { play, stop, playNote } = useAudioPlayer(osmdRef, parsedEvents)
+  const { play, stop, playNote } = useAudioPlayer(parsedEvents)
 
-  const { handleScoreClick } = useNoteInteraction(
+  const { handlePointerDown, handlePointerUp } = useNoteInteraction(
     containerRef,
     osmdRef,
     parsedEvents,
@@ -51,10 +52,17 @@ export const ScorePreview = () => {
         <div className="overflow-x-auto rounded-lg bg-white">
           <div
             ref={containerRef}
-            className="relative w-full"
+            className="relative w-full bg-white"
+            style={{
+              touchAction: 'manipulation',
+              willChange: 'transform',
+              transform: 'translate3d(0, 0, 0)',
+              contain: 'layout paint',
+            }}
             role="img"
             aria-label="楽譜表示エリア"
-            onClick={handleScoreClick}
+            onPointerDown={handlePointerDown}
+            onPointerUp={handlePointerUp}
           />
           {isLoadingScore && (
             <Alert variant="info">
