@@ -149,16 +149,54 @@ export const useNoteInteraction = (
 
       // OSMDの表示ピッチから推定される note string を計算
       const pitch = sourceNote.TransposedPitch || sourceNote.Pitch
-      const fundamental = pitch.FundamentalNote
-      const octave = pitch.Octave
-      const alter = pitch.AccidentalHalfTones
+      let osmdPitchStr = ''
 
-      const semitone = fundamental + alter
-      const octaveShift = Math.floor(semitone / 12)
-      const normalizedSemitone = ((semitone % 12) + 12) % 12
-      const finalOctave = octave + octaveShift
+      if (pitch) {
+        const fundamental = pitch.FundamentalNote
+        const octave = pitch.Octave
+        const alter = pitch.AccidentalHalfTones
 
-      const osmdPitchStr = `${SEMITONE_TO_NOTE[normalizedSemitone]}${finalOctave}`
+        const semitone = fundamental + alter
+        const octaveShift = Math.floor(semitone / 12)
+        const normalizedSemitone = ((semitone % 12) + 12) % 12
+        const finalOctave = octave + octaveShift
+
+        osmdPitchStr = `${SEMITONE_TO_NOTE[normalizedSemitone]}${finalOctave}`
+      } else if (
+        'displayStepUnpitched' in sourceNote &&
+        sourceNote.displayStepUnpitched !== undefined
+      ) {
+        const rawNote = sourceNote as {
+          displayStepUnpitched: number
+          displayOctaveUnpitched?: number
+        }
+        const fundamental = rawNote.displayStepUnpitched
+        const octave = rawNote.displayOctaveUnpitched ?? 4
+        const semitone = fundamental
+        const octaveShift = Math.floor(semitone / 12)
+        const normalizedSemitone = ((semitone % 12) + 12) % 12
+        const finalOctave = octave + octaveShift
+
+        osmdPitchStr = `${SEMITONE_TO_NOTE[normalizedSemitone]}${finalOctave}`
+      }
+
+      let partId = ''
+      try {
+        if (sourceNote.ParentStaff?.ParentInstrument?.IdString) {
+          partId = sourceNote.ParentStaff.ParentInstrument.IdString
+        }
+      } catch {
+        console.warn('Could not extract part ID from sourceNote.')
+      }
+
+      let voiceId = ''
+      try {
+        if (sourceNote.ParentVoiceEntry?.ParentVoice?.VoiceId !== undefined) {
+          voiceId = String(sourceNote.ParentVoiceEntry.ParentVoice.VoiceId)
+        }
+      } catch {
+        console.warn('Could not extract voice ID from sourceNote.')
+      }
 
       // parsedEventsの中から、クリックした音符に該当するイベントを探す
       const measureNum = sourceNote.SourceMeasure.MeasureNumber
@@ -166,37 +204,43 @@ export const useNoteInteraction = (
         sourceNote.getAbsoluteTimestamp().RealValue * 4 * 192
       )
 
-      const eventsInMeasure = parsedEvents.filter(
-        (ev) => ev.measureNumber === measureNum
+      // 声部(Voice)も一致するイベントを優先してフィルタリング
+      let eventsInMeasure = parsedEvents.filter(
+        (ev) =>
+          ev.measureNumber === measureNum &&
+          (!partId || ev.partId === partId) &&
+          (!voiceId || ev.voice === voiceId)
       )
 
-      let bestEvent: NoteEvent | null = null
-      let minTimeDiff = Infinity
-
-      const eventsAtTime: NoteEvent[] = []
-      const activeEventsInMeasure = eventsInMeasure.filter(
-        (ev) => !ev.isRest && !ev.isTieContinuation
-      )
-      for (const ev of activeEventsInMeasure) {
-        const diff = Math.abs(ev.time - timeInTicks)
-        if (diff < minTimeDiff) {
-          minTimeDiff = diff
-          eventsAtTime.length = 0
-          eventsAtTime.push(ev)
-        } else if (diff === minTimeDiff) {
-          eventsAtTime.push(ev)
-        }
+      // 声部フィルタで候補が空になった場合は、声部フィルタなしでフォールバック
+      if (eventsInMeasure.length === 0) {
+        eventsInMeasure = parsedEvents.filter(
+          (ev) =>
+            ev.measureNumber === measureNum && (!partId || ev.partId === partId)
+        )
       }
 
-      // 四分音符は 192 ティックなので、許容誤差を 50 ティックに設定
-      if (eventsAtTime.length > 0 && minTimeDiff < 50) {
-        bestEvent = eventsAtTime[0]
-        for (const ev of eventsAtTime) {
-          if (ev.displayPitch === osmdPitchStr) {
+      // タイ継続音 (isTieContinuation) もマッチング対象に含める (isRest のみ除外)
+      const activeEventsInMeasure = eventsInMeasure.filter((ev) => !ev.isRest)
+
+      // 1. 同一小節内で表示ピッチが一致するものを最優先で探す
+      let bestEvent =
+        activeEventsInMeasure.find((ev) => ev.displayPitch === osmdPitchStr) ||
+        null
+
+      let minTimeDiff = Infinity
+
+      // 2. 見つからない場合、同小節内で最も近い時間のイベントを探す
+      if (!bestEvent && activeEventsInMeasure.length > 0) {
+        for (const ev of activeEventsInMeasure) {
+          const diff = Math.abs(ev.time - timeInTicks)
+          if (diff < minTimeDiff) {
+            minTimeDiff = diff
             bestEvent = ev
-            break
           }
         }
+      } else if (bestEvent) {
+        minTimeDiff = Math.abs(bestEvent.time - timeInTicks)
       }
 
       let instrumentName = 'piano'
