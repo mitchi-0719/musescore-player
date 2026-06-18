@@ -2,6 +2,7 @@ import {
   type PointerEventHandler,
   type RefObject,
   useCallback,
+  useMemo,
   useRef,
 } from 'react'
 
@@ -36,15 +37,7 @@ const getSvgElement = (note: object): SVGElement | null => {
 const clearNoteHighlight = (note: object) => {
   const svgElement = getSvgElement(note)
   if (svgElement) {
-    svgElement.style.fill = ''
-    svgElement.style.stroke = ''
-    const children = svgElement.querySelectorAll('*')
-    children.forEach((child) => {
-      if (child instanceof SVGElement || child instanceof HTMLElement) {
-        child.style.fill = ''
-        child.style.stroke = ''
-      }
-    })
+    svgElement.classList.remove('note-highlight')
   } else if ('setColor' in note && typeof note.setColor === 'function') {
     try {
       note.setColor('#000000', {
@@ -63,15 +56,7 @@ const clearNoteHighlight = (note: object) => {
 const applyNoteHighlight = (note: object) => {
   const svgElement = getSvgElement(note)
   if (svgElement) {
-    svgElement.style.fill = '#FF0000'
-    svgElement.style.stroke = '#FF0000'
-    const children = svgElement.querySelectorAll('*')
-    children.forEach((child) => {
-      if (child instanceof SVGElement || child instanceof HTMLElement) {
-        child.style.fill = '#FF0000'
-        child.style.stroke = '#FF0000'
-      }
-    })
+    svgElement.classList.add('note-highlight')
   } else if ('setColor' in note && typeof note.setColor === 'function') {
     try {
       note.setColor('#FF0000', {
@@ -94,6 +79,18 @@ export const useNoteInteraction = (
   playNote: PlayNoteFn | null
 ) => {
   const previousNoteRef = useRef<object | null>(null)
+
+  // 小節番号で音符イベントをグループ化するインデックスを作成
+  const measureEventMap = useMemo(() => {
+    const map = new Map<number, NoteEvent[]>()
+    for (const ev of parsedEvents) {
+      if (!map.has(ev.measureNumber)) {
+        map.set(ev.measureNumber, [])
+      }
+      map.get(ev.measureNumber)!.push(ev)
+    }
+    return map
+  }, [parsedEvents])
 
   const handleScoreClick: PointerEventHandler<HTMLDivElement> = useCallback(
     (e) => {
@@ -204,19 +201,20 @@ export const useNoteInteraction = (
         sourceNote.getAbsoluteTimestamp().RealValue * 4 * 192
       )
 
+      // 小節番号インデックスから対象小節 of イベントリストを取得
+      const eventsInMeasureTotal = measureEventMap.get(measureNum) || []
+
       // 声部(Voice)も一致するイベントを優先してフィルタリング
-      let eventsInMeasure = parsedEvents.filter(
+      let eventsInMeasure = eventsInMeasureTotal.filter(
         (ev) =>
-          ev.measureNumber === measureNum &&
           (!partId || ev.partId === partId) &&
           (!voiceId || ev.voice === voiceId)
       )
 
       // 声部フィルタで候補が空になった場合は、声部フィルタなしでフォールバック
       if (eventsInMeasure.length === 0) {
-        eventsInMeasure = parsedEvents.filter(
-          (ev) =>
-            ev.measureNumber === measureNum && (!partId || ev.partId === partId)
+        eventsInMeasure = eventsInMeasureTotal.filter(
+          (ev) => !partId || ev.partId === partId
         )
       }
 
@@ -274,7 +272,7 @@ export const useNoteInteraction = (
         playNote(samplerId, playbackKey, durationBeats)
       }
     },
-    [containerRef, osmdRef, playNote, parsedEvents]
+    [containerRef, osmdRef, playNote, measureEventMap]
   )
 
   return { handleScoreClick }
