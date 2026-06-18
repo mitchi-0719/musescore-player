@@ -1,5 +1,5 @@
 import {
-  type MouseEventHandler,
+  type PointerEventHandler,
   type RefObject,
   useCallback,
   useRef,
@@ -95,7 +95,7 @@ export const useNoteInteraction = (
 ) => {
   const previousNoteRef = useRef<object | null>(null)
 
-  const handleScoreClick: MouseEventHandler<HTMLDivElement> = useCallback(
+  const handleScoreClick: PointerEventHandler<HTMLDivElement> = useCallback(
     (e) => {
       if (useScoreStore.getState().isPlaying) {
         console.log(
