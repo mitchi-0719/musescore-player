@@ -33,3 +33,9 @@ body {
   fill: #f59e0b !important;
   stroke: #f59e0b !important;
 }
+
+.note-highlight,
+.note-highlight * {
+  fill: #ff0000 !important;
+  stroke: #ff0000 !important;
+}
