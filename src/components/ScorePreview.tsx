@@ -31,7 +31,7 @@ export const ScorePreview = () => {
     return parseMusicXmlForEvents(musicXml)
   }, [musicXml])
 
-  const { play, stop, playNote } = useAudioPlayer(osmdRef, parsedEvents)
+  const { play, stop, playNote } = useAudioPlayer(parsedEvents)
 
   const { handleScoreClick } = useNoteInteraction(
     containerRef,
@@ -53,8 +53,13 @@ export const ScorePreview = () => {
         <div className="overflow-x-auto rounded-lg bg-white">
           <div
             ref={containerRef}
-            className="relative w-full"
-            style={{ touchAction: 'manipulation' }}
+            className="relative w-full bg-white"
+            style={{
+              touchAction: 'manipulation',
+              willChange: 'transform',
+              transform: 'translate3d(0, 0, 0)',
+              contain: 'layout paint',
+            }}
             role="img"
             aria-label="楽譜表示エリア"
             onPointerDown={isPlaying ? undefined : handleScoreClick}

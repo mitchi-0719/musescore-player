@@ -98,9 +98,9 @@ export const useNoteInteraction = (
   const handleScoreClick: PointerEventHandler<HTMLDivElement> = useCallback(
     (e) => {
       if (useScoreStore.getState().isPlaying) {
-        console.log(
-          '[NoteClick] Tap ignored because score playback is in progress'
-        )
+        // console.log(
+        //   '[NoteClick] Tap ignored because score playback is in progress'
+        // )
         return
       }
 
@@ -124,7 +124,7 @@ export const useNoteInteraction = (
       )
 
       if (!graphicalNote) {
-        console.log('[NoteClick] No note found near the click point.')
+        // console.log('[NoteClick] No note found near the click point.')
         return
       }
 
@@ -143,7 +143,7 @@ export const useNoteInteraction = (
       previousNoteRef.current = graphicalNote
 
       if (sourceNote.isRest()) {
-        console.log('[NoteClick] Clicked on a rest.')
+        // console.log('[NoteClick] Clicked on a rest.')
         return
       }
 
@@ -239,8 +239,8 @@ export const useNoteInteraction = (
             bestEvent = ev
           }
         }
-      } else if (bestEvent) {
-        minTimeDiff = Math.abs(bestEvent.time - timeInTicks)
+        // } else if (bestEvent) {
+        //   minTimeDiff = Math.abs(bestEvent.time - timeInTicks)
       }
 
       let instrumentName = 'piano'
@@ -262,13 +262,13 @@ export const useNoteInteraction = (
         ? bestEvent.duration / 192
         : sourceNote.Length.RealValue * 4
 
-      console.log('[NoteClick] Nearest note found:', {
-        instrumentName,
-        playbackKey,
-        durationBeats,
-        matchedEvent: bestEvent,
-        minTimeDiff,
-      })
+      // console.log('[NoteClick] Nearest note found:', {
+      //   instrumentName,
+      //   playbackKey,
+      //   durationBeats,
+      //   matchedEvent: bestEvent,
+      //   minTimeDiff,
+      // })
 
       if (playNote) {
         playNote(samplerId, playbackKey, durationBeats)
