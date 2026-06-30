@@ -7,11 +7,30 @@ import { PIANO_MAP } from '../constants/piano'
 import type { NoteEvent } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
 
-export const useAudioPlayer = (parsedEvents: NoteEvent[]) => {
+type AudioPlayerOptions = {
+  onNoteStart?: (event: NoteEvent) => void
+  onPlaybackStart?: () => void
+  onPlaybackStop?: () => void
+}
+
+export const useAudioPlayer = (
+  parsedEvents: NoteEvent[],
+  options: AudioPlayerOptions = {}
+) => {
   const samplers = useRef<Record<string, Tone.Sampler>>({})
   const isPlaying = useScoreStore((state) => state.isPlaying)
   const setIsPlaying = useScoreStore((state) => state.setIsPlaying)
   const partRef = useRef<Tone.Part | null>(null)
+  const onNoteStartRef = useRef(options.onNoteStart)
+  const onPlaybackStartRef = useRef(options.onPlaybackStart)
+  const onPlaybackStopRef = useRef(options.onPlaybackStop)
+  const hasObservedPlaybackStateRef = useRef(false)
+
+  useEffect(() => {
+    onNoteStartRef.current = options.onNoteStart
+    onPlaybackStartRef.current = options.onPlaybackStart
+    onPlaybackStopRef.current = options.onPlaybackStop
+  }, [options.onNoteStart, options.onPlaybackStart, options.onPlaybackStop])
 
   const ticksToSeconds = useCallback((ticks: number) => {
     return Tone.Time(`${ticks}i`).toSeconds()
@@ -58,6 +77,10 @@ export const useAudioPlayer = (parsedEvents: NoteEvent[]) => {
       const { event } = value
       if (event.isRest || event.isTieContinuation) return
 
+      Tone.getDraw().schedule(() => {
+        onNoteStartRef.current?.(event)
+      }, time)
+
       const samplerId = event.samplerId
       const sampler = samplers.current[samplerId] ?? samplers.current.piano
 
@@ -80,11 +103,17 @@ export const useAudioPlayer = (parsedEvents: NoteEvent[]) => {
   // isPlaying に応じて Transport の開始/停止を同期
   useEffect(() => {
     if (isPlaying) {
+      onPlaybackStartRef.current?.()
       Tone.getTransport().start()
     } else {
+      Tone.getDraw().cancel()
       Tone.getTransport().stop()
       Object.values(samplers.current).forEach((s) => s.releaseAll())
+      if (hasObservedPlaybackStateRef.current) {
+        onPlaybackStopRef.current?.()
+      }
     }
+    hasObservedPlaybackStateRef.current = true
   }, [isPlaying])
 
   const play = useCallback(async () => {

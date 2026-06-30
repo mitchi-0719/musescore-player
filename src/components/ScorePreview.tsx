@@ -1,5 +1,6 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 
+import type { Cursor } from 'opensheetmusicdisplay'
 import { useShallow } from 'zustand/shallow'
 
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
@@ -10,8 +11,45 @@ import { useScoreStore } from '../stores/useScoreStore'
 import { ControlModal } from './ControlModal'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
+const TICKS_PER_QUARTER = 192
+const OSMD_TIMESTAMP_TO_TICKS = 4 * TICKS_PER_QUARTER
+const CURSOR_ADVANCE_LIMIT = 10000
+const MIN_CURSOR_WIDTH_PX = 4
+
+const getCursorTicks = (cursor: Cursor): number | null => {
+  try {
+    return Math.round(
+      cursor.Iterator.CurrentSourceTimestamp.RealValue * OSMD_TIMESTAMP_TO_TICKS
+    )
+  } catch {
+    return null
+  }
+}
+
+const syncCursorImageSize = (cursorElement?: HTMLImageElement | null) => {
+  if (!cursorElement) return
+
+  const width = cursorElement.getAttribute('width')
+  const height = cursorElement.getAttribute('height')
+
+  if (width) {
+    const widthPx = Number(width)
+    cursorElement.style.width = `${
+      Number.isFinite(widthPx)
+        ? Math.max(widthPx, MIN_CURSOR_WIDTH_PX)
+        : MIN_CURSOR_WIDTH_PX
+    }px`
+  }
+  if (height) {
+    cursorElement.style.height = `${height}px`
+  }
+
+  cursorElement.style.maxWidth = 'none'
+}
+
 export const ScorePreview = () => {
   console.log('[ScorePreview] rendering...')
+  const lastCursorEventTimeRef = useRef<number | null>(null)
   const { musicXml, musicMxl, isLoading } = useScoreStore(
     useShallow((state) => ({
       musicXml: state.musicXml,
@@ -30,7 +68,64 @@ export const ScorePreview = () => {
     return parseMusicXmlForEvents(musicXml)
   }, [musicXml])
 
-  const { play, stop, playNote } = useAudioPlayer(parsedEvents)
+  const resetPlaybackCursor = useCallback(() => {
+    const cursor = osmdRef.current?.cursor
+    if (!cursor) return
+
+    lastCursorEventTimeRef.current = null
+    cursor.reset()
+    cursor.show()
+    syncCursorImageSize(cursor.cursorElement)
+  }, [osmdRef])
+
+  const syncPlaybackCursor = useCallback(
+    (eventTime: number) => {
+      const cursor = osmdRef.current?.cursor
+      if (!cursor) return
+
+      const targetTicks = Math.max(0, Math.round(eventTime))
+      if (lastCursorEventTimeRef.current === targetTicks) {
+        return
+      }
+
+      const initialCursorTicks = getCursorTicks(cursor)
+      if (
+        initialCursorTicks === null ||
+        initialCursorTicks > targetTicks ||
+        (lastCursorEventTimeRef.current !== null &&
+          lastCursorEventTimeRef.current > targetTicks)
+      ) {
+        cursor.reset()
+      }
+
+      cursor.show()
+
+      let cursorTicks = getCursorTicks(cursor)
+      let advanceCount = 0
+      while (
+        cursorTicks !== null &&
+        cursorTicks < targetTicks &&
+        !cursor.Iterator.EndReached &&
+        advanceCount < CURSOR_ADVANCE_LIMIT
+      ) {
+        cursor.next()
+        cursorTicks = getCursorTicks(cursor)
+        advanceCount += 1
+      }
+
+      syncCursorImageSize(cursor.cursorElement)
+      lastCursorEventTimeRef.current = targetTicks
+    },
+    [osmdRef]
+  )
+
+  const { play, stop, playNote } = useAudioPlayer(parsedEvents, {
+    onNoteStart: (event) => syncPlaybackCursor(event.time),
+    onPlaybackStart: resetPlaybackCursor,
+    onPlaybackStop: () => {
+      lastCursorEventTimeRef.current = null
+    },
+  })
 
   const { handlePointerDown, handlePointerUp } = useNoteInteraction(
     containerRef,
@@ -57,7 +152,6 @@ export const ScorePreview = () => {
               touchAction: 'manipulation',
               willChange: 'transform',
               transform: 'translate3d(0, 0, 0)',
-              contain: 'layout paint',
             }}
             role="img"
             aria-label="楽譜表示エリア"
