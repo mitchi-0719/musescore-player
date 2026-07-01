@@ -1,19 +1,254 @@
+import JSZip from 'jszip'
 import WebMscore from 'webmscore'
-
-import { injectHarmonyText } from './audioSync'
 
 interface MusicScoreExport {
   musicXml: string
   musicMxl: Uint8Array | null
 }
 
+type MusicXmlPitch = {
+  step: string
+  alter: number
+}
+
+type MscxHarmony = {
+  root: MusicXmlPitch | null
+  bass: MusicXmlPitch | null
+  name: string
+}
+
+type ChordKind = {
+  kind: string
+  text?: string
+}
+
+type RestoreHarmonyResult = {
+  musicXml: string
+}
+
+const HARMONY_TAG_PATTERN = /<harmony\b[\s\S]*?<\/harmony>/g
+
+const STEP_BY_INDEX = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
+const NATURAL_TPC_BY_STEP: Record<string, number> = {
+  C: 14,
+  D: 16,
+  E: 18,
+  F: 13,
+  G: 15,
+  A: 17,
+  B: 19,
+}
+
+const CHORD_KIND_BY_NAME: Record<string, ChordKind> = {
+  '': { kind: 'major' },
+  m: { kind: 'minor', text: 'm' },
+  min: { kind: 'minor', text: 'm' },
+  minor: { kind: 'minor', text: 'm' },
+  '+': { kind: 'augmented', text: 'aug' },
+  aug: { kind: 'augmented', text: 'aug' },
+  dim: { kind: 'diminished', text: 'dim' },
+  o: { kind: 'diminished', text: 'dim' },
+  '7': { kind: 'dominant', text: '7' },
+  '/7': { kind: 'dominant', text: '7' },
+  maj7: { kind: 'major-seventh', text: 'maj7' },
+  M7: { kind: 'major-seventh', text: 'maj7' },
+  m7: { kind: 'minor-seventh', text: 'm7' },
+  dim7: { kind: 'diminished-seventh', text: 'dim7' },
+  aug7: { kind: 'augmented-seventh', text: 'aug7' },
+  m7b5: { kind: 'half-diminished', text: 'm7b5' },
+  'm7-5': { kind: 'half-diminished', text: 'm7-5' },
+  ø: { kind: 'half-diminished', text: 'm7b5' },
+  'm(maj7)': { kind: 'major-minor', text: 'm(maj7)' },
+  '6': { kind: 'major-sixth', text: '6' },
+  maj6: { kind: 'major-sixth', text: 'maj6' },
+  m6: { kind: 'minor-sixth', text: 'm6' },
+  '9': { kind: 'dominant-ninth', text: '9' },
+  maj9: { kind: 'major-ninth', text: 'maj9' },
+  m9: { kind: 'minor-ninth', text: 'm9' },
+  '11': { kind: 'dominant-11th', text: '11' },
+  maj11: { kind: 'major-11th', text: 'maj11' },
+  m11: { kind: 'minor-11th', text: 'm11' },
+  '13': { kind: 'dominant-13th', text: '13' },
+  maj13: { kind: 'major-13th', text: 'maj13' },
+  m13: { kind: 'minor-13th', text: 'm13' },
+  sus2: { kind: 'suspended-second', text: '2' },
+  sus4: { kind: 'suspended-fourth', text: '4' },
+  '5': { kind: 'power', text: '5' },
+}
+
+const modulo = (value: number, divisor: number) =>
+  ((value % divisor) + divisor) % divisor
+
+const getDirectChild = (element: Element, tagName: string): Element | null => {
+  return (
+    Array.from(element.children).find((child) => child.tagName === tagName) ??
+    null
+  )
+}
+
+const getDirectChildText = (element: Element, tagName: string): string => {
+  return getDirectChild(element, tagName)?.textContent?.trim() ?? ''
+}
+
+const escapeXml = (value: string): string =>
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+
+const tpcToMusicXmlPitch = (value: string): MusicXmlPitch | null => {
+  if (!value.trim()) return null
+
+  const tpc = Number(value)
+  if (!Number.isFinite(tpc)) return null
+
+  const step = STEP_BY_INDEX[modulo((tpc - 14) * 4, 7)]
+  if (!step) return null
+
+  const alter = (tpc - NATURAL_TPC_BY_STEP[step]) / 7
+  if (!Number.isInteger(alter)) return null
+
+  return { step, alter }
+}
+
+const getChordKind = (name: string): ChordKind => {
+  const normalized = name.trim()
+  return (
+    CHORD_KIND_BY_NAME[normalized] ?? {
+      kind: 'major',
+      text: normalized || undefined,
+    }
+  )
+}
+
+const findMscxFile = async (fileBinary: Uint8Array): Promise<string | null> => {
+  if (fileBinary.byteLength === 0) {
+    console.warn('MSCZバイナリが空のためMSCXを読み込めません')
+    return null
+  }
+
+  try {
+    const zip = await JSZip.loadAsync(fileBinary)
+    const mscxEntry = Object.values(zip.files).find(
+      (entry) => !entry.dir && entry.name.toLowerCase().endsWith('.mscx')
+    )
+
+    return mscxEntry ? await mscxEntry.async('string') : null
+  } catch (error) {
+    console.warn('MSCZ内のMSCX読み込みに失敗しました:', error)
+    return null
+  }
+}
+
+const extractMscxHarmonies = (mscx: string): MscxHarmony[] => {
+  const doc = new DOMParser().parseFromString(mscx, 'application/xml')
+  if (doc.querySelector('parsererror')) {
+    return []
+  }
+
+  return Array.from(doc.querySelectorAll('Harmony'))
+    .map((harmony) => {
+      const harmonyInfo = getDirectChild(harmony, 'harmonyInfo')
+      if (!harmonyInfo) return null
+      const rootTpc = getDirectChildText(harmonyInfo, 'root')
+      const bassTpc = getDirectChildText(harmonyInfo, 'bass')
+
+      return {
+        root: tpcToMusicXmlPitch(rootTpc),
+        bass: tpcToMusicXmlPitch(bassTpc),
+        name: getDirectChildText(harmonyInfo, 'name'),
+      }
+    })
+    .filter((harmony): harmony is MscxHarmony => Boolean(harmony?.root))
+}
+
+const addPitchXml = (
+  lines: string[],
+  tagName: 'root' | 'bass',
+  pitch: MusicXmlPitch
+) => {
+  const prefix = tagName === 'root' ? 'root' : 'bass'
+  const arrangement = tagName === 'bass' ? ' arrangement="horizontal"' : ''
+
+  lines.push(`        <${tagName}${arrangement}>`)
+  lines.push(`          <${prefix}-step>${pitch.step}</${prefix}-step>`)
+  if (pitch.alter !== 0) {
+    lines.push(`          <${prefix}-alter>${pitch.alter}</${prefix}-alter>`)
+  }
+  lines.push(`          </${tagName}>`)
+}
+
+const buildHarmonyXml = (harmony: MscxHarmony): string => {
+  const lines = ['<harmony print-frame="no">']
+  const chordKind = getChordKind(harmony.name)
+
+  if (harmony.root) {
+    addPitchXml(lines, 'root', harmony.root)
+  }
+
+  const text = chordKind.text ? ` text="${escapeXml(chordKind.text)}"` : ''
+  lines.push(`        <kind${text}>${chordKind.kind}</kind>`)
+
+  if (harmony.bass) {
+    addPitchXml(lines, 'bass', harmony.bass)
+  }
+
+  lines.push('        </harmony>')
+  return lines.join('\n')
+}
+
+const restoreHarmonyFromMscz = async (
+  musicXml: string,
+  fileBinary: Uint8Array
+): Promise<RestoreHarmonyResult> => {
+  const mscx = await findMscxFile(fileBinary)
+  if (!mscx) {
+    return {
+      musicXml,
+    }
+  }
+
+  const harmonies = extractMscxHarmonies(mscx)
+  if (!harmonies.length) {
+    return {
+      musicXml,
+    }
+  }
+
+  const harmonyMatches = musicXml.match(HARMONY_TAG_PATTERN) ?? []
+  if (harmonyMatches.length !== harmonies.length) {
+    console.warn('Harmony数が一致しないためコード補正をスキップしました', {
+      musicXmlHarmonyCount: harmonyMatches.length,
+      mscxHarmonyCount: harmonies.length,
+    })
+    return {
+      musicXml,
+    }
+  }
+
+  let harmonyIndex = 0
+  return {
+    musicXml: musicXml.replace(HARMONY_TAG_PATTERN, () =>
+      buildHarmonyXml(harmonies[harmonyIndex++])
+    ),
+  }
+}
+
 export const convertMsczToMusicXml = async (
   fileBinary: Uint8Array
 ): Promise<MusicScoreExport> => {
-  const score = await WebMscore.load('mscz', fileBinary, [], true)
+  const webMscoreBinary = fileBinary.slice()
+  const msczArchiveBinary = fileBinary.slice()
 
-  const rawXml = await score.saveXml()
-  const musicXml = injectHarmonyText(rawXml)
+  const score = await WebMscore.load('mscz', webMscoreBinary, [], true)
+
+  const rawMusicXml = await score.saveXml()
+  const restoreResult = await restoreHarmonyFromMscz(
+    rawMusicXml,
+    msczArchiveBinary
+  )
+  const musicXml = restoreResult.musicXml
 
   let musicMxl: Uint8Array | null = null
   try {
