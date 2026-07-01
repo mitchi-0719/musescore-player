@@ -107,7 +107,10 @@ export const useOSMD = (
 
         osmdRef.current = osmd
 
-        if (musicMxl) {
+        if (musicXml) {
+          console.log('[useOSMD] Loading musicXml string')
+          await osmd.load(musicXml)
+        } else if (musicMxl) {
           console.log('[useOSMD] Loading musicMxl blob')
           const arrayBuffer = new Uint8Array(musicMxl).buffer
           await osmd.load(
@@ -115,9 +118,6 @@ export const useOSMD = (
               type: 'application/vnd.recordare.musicxml',
             })
           )
-        } else if (musicXml) {
-          console.log('[useOSMD] Loading musicXml string')
-          await osmd.load(musicXml)
         } else {
           return
         }
