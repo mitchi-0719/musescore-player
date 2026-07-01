@@ -88,6 +88,7 @@ export const useNoteInteraction = (
 ) => {
   const previousNoteRef = useRef<object | null>(null)
   const pointerDownRef = useRef<PointerDownState | null>(null)
+  const setHighlightedNote = useScoreStore((state) => state.setHighlightedNote)
 
   // SVG要素のキャッシュ（毎回querySelector を回避）
   const svgCacheRef = useRef<SVGElement | null>(null)
@@ -153,7 +154,12 @@ export const useNoteInteraction = (
       applyNoteHighlight(graphicalNote)
       previousNoteRef.current = graphicalNote
 
+      const timeInTicks = Math.round(
+        sourceNote.getAbsoluteTimestamp().RealValue * 4 * 192
+      )
+
       if (sourceNote.isRest()) {
+        setHighlightedNote(timeInTicks)
         return
       }
 
@@ -210,9 +216,6 @@ export const useNoteInteraction = (
 
       // parsedEventsの中から、クリックした音符に該当するイベントを探す
       const measureNum = sourceNote.SourceMeasure.MeasureNumber
-      const timeInTicks = Math.round(
-        sourceNote.getAbsoluteTimestamp().RealValue * 4 * 192
-      )
 
       // 小節番号インデックスから対象小節 of イベントリストを取得
       const eventsInMeasureTotal = measureEventMap.get(measureNum) || []
@@ -267,12 +270,15 @@ export const useNoteInteraction = (
           ? 'drum'
           : 'piano'
       const playbackKey = bestEvent ? bestEvent.playbackKey : osmdPitchStr
+      const selectedNoteTime = bestEvent ? bestEvent.time : timeInTicks
+
+      setHighlightedNote(selectedNoteTime)
 
       if (playNote) {
         playNote(samplerId, playbackKey, DEFAULT_DURATION_BEATS)
       }
     },
-    [containerRef, osmdRef, playNote, measureEventMap]
+    [containerRef, osmdRef, playNote, measureEventMap, setHighlightedNote]
   )
 
   // Phase 1: pointerdown — 座標・タイムスタンプを記録（BoundingRect もここでキャッシュ）

@@ -9,7 +9,7 @@ import { useScoreStore } from '../stores/useScoreStore'
 
 type AudioPlayerOptions = {
   onNoteStart?: (event: NoteEvent) => void
-  onPlaybackStart?: () => void
+  onPlaybackStart?: (startTicks: number) => void
   onPlaybackStop?: () => void
 }
 
@@ -103,8 +103,14 @@ export const useAudioPlayer = (
   // isPlaying に応じて Transport の開始/停止を同期
   useEffect(() => {
     if (isPlaying) {
-      onPlaybackStartRef.current?.()
-      Tone.getTransport().start()
+      const startTicks = Math.max(
+        0,
+        useScoreStore.getState().highlightedNoteTime ?? 0
+      )
+      const startSeconds = ticksToSeconds(startTicks)
+
+      onPlaybackStartRef.current?.(startTicks)
+      Tone.getTransport().start(undefined, startSeconds)
     } else {
       Tone.getDraw().cancel()
       Tone.getTransport().stop()
@@ -114,7 +120,7 @@ export const useAudioPlayer = (
       }
     }
     hasObservedPlaybackStateRef.current = true
-  }, [isPlaying])
+  }, [isPlaying, ticksToSeconds])
 
   const play = useCallback(async () => {
     await Tone.start()

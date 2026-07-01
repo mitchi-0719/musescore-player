@@ -68,16 +68,6 @@ export const ScorePreview = () => {
     return parseMusicXmlForEvents(musicXml)
   }, [musicXml])
 
-  const resetPlaybackCursor = useCallback(() => {
-    const cursor = osmdRef.current?.cursor
-    if (!cursor) return
-
-    lastCursorEventTimeRef.current = null
-    cursor.reset()
-    cursor.show()
-    syncCursorImageSize(cursor.cursorElement)
-  }, [osmdRef])
-
   const syncPlaybackCursor = useCallback(
     (eventTime: number) => {
       const cursor = osmdRef.current?.cursor
@@ -119,9 +109,28 @@ export const ScorePreview = () => {
     [osmdRef]
   )
 
+  const startPlaybackCursor = useCallback(
+    (startTicks: number) => {
+      const cursor = osmdRef.current?.cursor
+      if (!cursor) return
+
+      lastCursorEventTimeRef.current = null
+
+      if (startTicks > 0) {
+        syncPlaybackCursor(startTicks)
+        return
+      }
+
+      cursor.reset()
+      cursor.show()
+      syncCursorImageSize(cursor.cursorElement)
+    },
+    [osmdRef, syncPlaybackCursor]
+  )
+
   const { play, stop, playNote } = useAudioPlayer(parsedEvents, {
     onNoteStart: (event) => syncPlaybackCursor(event.time),
-    onPlaybackStart: resetPlaybackCursor,
+    onPlaybackStart: startPlaybackCursor,
     onPlaybackStop: () => {
       lastCursorEventTimeRef.current = null
       osmdRef.current?.cursor?.hide()
