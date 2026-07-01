@@ -124,6 +124,7 @@ export const ScorePreview = () => {
     onPlaybackStart: resetPlaybackCursor,
     onPlaybackStop: () => {
       lastCursorEventTimeRef.current = null
+      osmdRef.current?.cursor?.hide()
     },
   })
 
