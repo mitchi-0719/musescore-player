@@ -25,6 +25,13 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* OSMD が SVG として描画する歌詞・コードなどをドラッグ選択させない。 */
+.score-preview,
+.score-preview * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .osmd-note-selected path,
 .osmd-note-selected ellipse,
 .osmd-note-selected circle,

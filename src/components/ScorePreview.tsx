@@ -157,7 +157,7 @@ export const ScorePreview = () => {
         <div className="overflow-x-auto rounded-lg bg-white">
           <div
             ref={containerRef}
-            className="relative w-full bg-white"
+            className="score-preview relative w-full bg-white"
             style={{
               touchAction: 'manipulation',
               willChange: 'transform',
