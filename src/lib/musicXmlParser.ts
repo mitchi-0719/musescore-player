@@ -22,6 +22,7 @@ export type NoteEvent = {
   measureNumber: number
   isRest: boolean
   isTieContinuation: boolean
+  displayPitch: string | null
 }
 
 type PartMeta = {
@@ -44,6 +45,7 @@ type PendingTie = {
   duration: number
   measureNumber: number
   startEvent: NoteEvent
+  displayPitch: string | null
 }
 
 type ParsedNoteData = {
@@ -52,6 +54,7 @@ type ParsedNoteData = {
   midi: number
   samplerId: SamplerId
   instrumentName: string | null
+  displayPitch: string | null
 }
 
 const TICKS_PER_QUARTER = 192
@@ -270,10 +273,31 @@ const parsePitchNote = (note: Element): ParsedNoteData => {
     midi: finalOctave * 12 + normalizedSemitone,
     samplerId: 'piano',
     instrumentName: null,
+    displayPitch: noteName,
   }
 }
 
+const parseUnpitchedDisplayPitch = (note: Element): string => {
+  const step =
+    note.querySelector('unpitched > display-step')?.textContent?.trim() || 'C'
+  const octave = Number(
+    note.querySelector('unpitched > display-octave')?.textContent || '4'
+  )
+  const alter = Number(
+    note.querySelector('unpitched > display-alter')?.textContent || '0'
+  )
+
+  const safeAlter = Number.isNaN(alter) ? 0 : alter
+  const safeOctave = Number.isNaN(octave) ? 4 : octave
+  const semitone = (STEP_TO_SEMITONE[step] ?? 0) + safeAlter
+  const octaveShift = Math.floor(semitone / 12)
+  const normalizedSemitone = ((semitone % 12) + 12) % 12
+  const finalOctave = safeOctave + octaveShift
+  return `${SEMITONE_TO_NOTE[normalizedSemitone]}${finalOctave}`
+}
+
 const parseUnpitchedNote = (
+  note: Element,
   partMeta: PartMeta,
   instrumentName: string | null,
   samplerId: SamplerId,
@@ -290,6 +314,7 @@ const parseUnpitchedNote = (
     midi,
     samplerId,
     instrumentName: instrumentName || noteLabel,
+    displayPitch: parseUnpitchedDisplayPitch(note),
   }
 }
 
@@ -305,7 +330,13 @@ const parseNoteData = (
   const samplerId = resolveSamplerId(partMeta, instrumentName)
 
   if (note.querySelector('unpitched')) {
-    return parseUnpitchedNote(partMeta, instrumentName, samplerId, instrumentId)
+    return parseUnpitchedNote(
+      note,
+      partMeta,
+      instrumentName,
+      samplerId,
+      instrumentId
+    )
   }
 
   if (note.querySelector('pitch')) {
@@ -319,6 +350,7 @@ const parseNoteData = (
       midi: 0,
       samplerId,
       instrumentName: instrumentName || partMeta.partName,
+      displayPitch: samplerId === 'clap' ? 'C4' : 'C1',
     }
   }
 
@@ -341,6 +373,102 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
   const fallbackDivisions = getInitialDivisions(doc)
   const partMetaMap = getPartMetaMap(doc)
 
+  // 各小節の絶対開始ティック数を事前に算出する
+  const measureStartTicks: number[] = []
+  const firstPart = doc.querySelector('part')
+  if (firstPart) {
+    let currentBeats = 4
+    let currentBeatType = 4
+    let accumulatedTicks = 0
+
+    firstPart.querySelectorAll('measure').forEach((measure, measureIndex) => {
+      const timeElem = measure.querySelector('attributes > time')
+      if (timeElem) {
+        const beatsVal = Number(timeElem.querySelector('beats')?.textContent)
+        const beatTypeVal = Number(
+          timeElem.querySelector('beat-type')?.textContent
+        )
+        if (!Number.isNaN(beatsVal) && beatsVal > 0) {
+          currentBeats = beatsVal
+        }
+        if (!Number.isNaN(beatTypeVal) && beatTypeVal > 0) {
+          currentBeatType = beatTypeVal
+        }
+      }
+
+      measureStartTicks[measureIndex] = accumulatedTicks
+
+      let measureLengthTicks = Math.round(
+        ((currentBeats * 4) / currentBeatType) * TICKS_PER_QUARTER
+      )
+
+      // 最初の小節がアウフタクト（不完全小節）であるかどうかのチェック
+      if (measureIndex === 0) {
+        let maxFirstMeasureTicks = 0
+        doc.querySelectorAll('part').forEach((p) => {
+          const firstMeas = p.querySelector('measure')
+          if (firstMeas) {
+            const divText = firstMeas.querySelector(
+              'attributes > divisions'
+            )?.textContent
+            const div = divText ? Number(divText) : fallbackDivisions
+            const safeDiv =
+              !div || Number.isNaN(div) || div <= 0 ? fallbackDivisions : div
+
+            const vTicks = new Map<string, number>()
+            let cursor = 0
+            Array.from(firstMeas.children).forEach((child) => {
+              const tag = child.tagName.toLowerCase()
+              if (tag === 'backup') {
+                const backDur = Number(
+                  child.querySelector('duration')?.textContent || '0'
+                )
+                const backTicks = Number.isNaN(backDur)
+                  ? 0
+                  : Math.round((backDur / safeDiv) * TICKS_PER_QUARTER)
+                cursor = Math.max(0, cursor - backTicks)
+              } else if (tag === 'forward') {
+                const fwdDur = Number(
+                  child.querySelector('duration')?.textContent || '0'
+                )
+                const fwdTicks = Number.isNaN(fwdDur)
+                  ? 0
+                  : Math.round((fwdDur / safeDiv) * TICKS_PER_QUARTER)
+                cursor += fwdTicks
+              } else if (tag === 'note') {
+                const voice = getVoice(child)
+                const duration = getDurationTicks(child, safeDiv)
+                const isChord = child.querySelector('chord') !== null
+                const startTime = isChord ? (vTicks.get(voice) ?? 0) : cursor
+                const endTime = startTime + duration
+                if (!isChord) {
+                  vTicks.set(voice, endTime)
+                  cursor = endTime
+                }
+              }
+            })
+            const firstPartMax = Array.from(vTicks.values()).reduce(
+              (a, b) => Math.max(a, b),
+              0
+            )
+            if (firstPartMax > maxFirstMeasureTicks) {
+              maxFirstMeasureTicks = firstPartMax
+            }
+          }
+        })
+
+        if (
+          maxFirstMeasureTicks > 0 &&
+          maxFirstMeasureTicks < measureLengthTicks
+        ) {
+          measureLengthTicks = maxFirstMeasureTicks
+        }
+      }
+
+      accumulatedTicks += measureLengthTicks
+    })
+  }
+
   doc.querySelectorAll('part').forEach((part) => {
     const partId = part.getAttribute('id') || 'P1'
     const partMeta = partMetaMap.get(partId) || {
@@ -355,12 +483,10 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
     part.querySelectorAll('measure').forEach((measure, measureIndex) => {
       currentDivisions = getMeasureDivisions(measure, currentDivisions)
 
-      // measureCursor follows the sequential position within this measure
-      const existingVoiceTimes = Array.from(voiceTicks.values())
-      let measureCursor =
-        existingVoiceTimes.length > 0 ? Math.max(...existingVoiceTimes) : 0
+      const startTicks = measureStartTicks[measureIndex] ?? 0
+      let measureCursor = startTicks
 
-      // process measure children in document order to respect <backup> / <forward>
+      // measureChildren の処理
       Array.from(measure.children).forEach((child) => {
         const tag = child.tagName.toLowerCase()
 
@@ -371,7 +497,7 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
           const backTicks = Number.isNaN(backDur)
             ? 0
             : Math.round((backDur / currentDivisions) * TICKS_PER_QUARTER)
-          measureCursor = Math.max(0, measureCursor - backTicks)
+          measureCursor = Math.max(startTicks, measureCursor - backTicks)
           return
         }
 
@@ -394,8 +520,12 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
         const isChord = note.querySelector('chord') !== null
         const isRest = note.querySelector('rest') !== null
 
-        const currentTime = voiceTicks.get(voice) ?? 0
-        const startTime = isChord ? currentTime : measureCursor
+        const currentTime = voiceTicks.get(voice) ?? startTicks
+        const baseTime = Math.max(currentTime, startTicks)
+        const startTime = isChord ? baseTime : measureCursor
+
+        const rawNum = measure.getAttribute('number')
+        const measureNumber = rawNum ? parseInt(rawNum, 10) : measureIndex + 1
 
         if (isRest) {
           events.push({
@@ -410,9 +540,10 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
             midi: 0,
             lyric: null,
             voice,
-            measureNumber: measureIndex + 1,
+            measureNumber,
             isRest: true,
             isTieContinuation: false,
+            displayPitch: null,
           })
           if (!isChord) {
             voiceTicks.set(voice, startTime + duration)
@@ -440,8 +571,6 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
           pendingTie.duration += duration
           pendingTie.lyric = pendingTie.lyric ?? lyric
 
-          // タイ継続イベントを追加（SVG要素との対応を維持）
-          // クリック時は同じ音を鳴らし、再生ループではスキップされる
           events.push({
             partId: pendingTie.partId,
             partName: pendingTie.partName,
@@ -454,13 +583,13 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
             midi: pendingTie.midi,
             lyric: pendingTie.lyric,
             voice: pendingTie.voice,
-            measureNumber: measureIndex + 1,
+            measureNumber,
             isRest: false,
             isTieContinuation: true,
+            displayPitch: pendingTie.displayPitch,
           })
 
           if (!tieStart) {
-            // タイ終了: 開始イベントの duration と lyric をタイ全体の情報で更新
             pendingTie.startEvent.duration = pendingTie.duration
             pendingTie.startEvent.lyric =
               pendingTie.startEvent.lyric ?? pendingTie.lyric
@@ -475,7 +604,6 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
         }
 
         if (tieStart && !tieStop) {
-          // タイ開始: イベントを追加し、pendingTie に参照を保持
           const event: NoteEvent = {
             partId,
             partName: partMeta.partName,
@@ -488,9 +616,10 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
             midi: parsedNote.midi,
             lyric,
             voice,
-            measureNumber: measureIndex + 1,
+            measureNumber,
             isRest: false,
             isTieContinuation: false,
+            displayPitch: parsedNote.displayPitch,
           }
           events.push(event)
 
@@ -508,6 +637,7 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
             duration,
             measureNumber: measureIndex + 1,
             startEvent: event,
+            displayPitch: parsedNote.displayPitch,
           })
 
           if (!isChord) {
@@ -518,7 +648,6 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
         }
 
         if (tieStart && tieStop) {
-          // pendingTie が無い状態でのタイ開始+終了（エッジケース）
           const event: NoteEvent = {
             partId,
             partName: partMeta.partName,
@@ -531,9 +660,10 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
             midi: parsedNote.midi,
             lyric,
             voice,
-            measureNumber: measureIndex + 1,
+            measureNumber,
             isRest: false,
             isTieContinuation: false,
+            displayPitch: parsedNote.displayPitch,
           }
           events.push(event)
 
@@ -551,6 +681,7 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
             duration,
             measureNumber: measureIndex + 1,
             startEvent: event,
+            displayPitch: parsedNote.displayPitch,
           })
 
           if (!isChord) {
@@ -572,9 +703,10 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
           midi: parsedNote.midi,
           lyric,
           voice,
-          measureNumber: measureIndex + 1,
+          measureNumber,
           isRest: false,
           isTieContinuation: false,
+          displayPitch: parsedNote.displayPitch,
         })
 
         if (!isChord) {
@@ -585,7 +717,6 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
     })
 
     pendingTies.forEach((pendingTie) => {
-      // タイ終了が見つからなかった場合: 開始イベントの duration と lyric を更新
       pendingTie.startEvent.duration = pendingTie.duration
       pendingTie.startEvent.lyric =
         pendingTie.startEvent.lyric ?? pendingTie.lyric

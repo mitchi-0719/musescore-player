@@ -1,13 +1,49 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>musescore-player</title>
+    <meta name="theme-color" content="#4f46e5" />
+    <title>MuseScore Player</title>
+    <meta
+      name="description"
+      content="MuseScore の .mscz ファイルをブラウザ上で読み込み、解析・楽譜表示・再生までをフロントエンドのみで完結させる Web アプリです。"
+    />
+    <meta property="og:url" content="https://musescore-player.vdslab.jp/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="MuseScore Player" />
+    <meta
+      property="og:description"
+      content="MuseScore の .mscz ファイルをブラウザ上で読み込み、解析・楽譜表示・再生までをフロントエンドのみで完結させる Web アプリです。"
+    />
+    <meta property="og:site_name" content="MuseScore Player" />
+    <meta
+      property="og:image"
+      content="https://musescore-player.vdslab.jp/OGP.png"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link
+      rel="apple-touch-icon"
+      href="/favicon.ico"
+    />
+    <link
+      rel="icon"
+      type="image/x-icon"
+      href="/favicon.ico"
+    />
+    <link rel="manifest" href="/manifest.json" />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((reg) => console.log('SW registered:', reg))
+            .catch((err) => console.error('SW register failed:', err));
+        });
+      }
+    </script>
   </body>
 </html>

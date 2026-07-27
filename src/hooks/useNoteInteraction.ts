@@ -1,48 +1,83 @@
-import {
-  type MouseEventHandler,
-  type RefObject,
-  useCallback,
-  useEffect,
-  useRef,
-} from 'react'
+import { type RefObject, useCallback, useMemo, useRef } from 'react'
 
-import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
-import { useShallow } from 'zustand/shallow'
+import { OpenSheetMusicDisplay, PointF2D } from 'opensheetmusicdisplay'
 
 import type { NoteEvent } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
 import type { PlayNoteFn } from './useAudioPlayer'
 
-const STAFFLINE_SELECTOR = '[class~="staffline"]'
-const NOTE_SELECTOR = '.vf-stavenote'
-const SELECTED_NOTE_CLASS = 'osmd-note-selected'
+const SEMITONE_TO_NOTE = [
+  'C',
+  'C#',
+  'D',
+  'D#',
+  'E',
+  'F',
+  'F#',
+  'G',
+  'G#',
+  'A',
+  'A#',
+  'B',
+]
 
-const sortEventsForSvgOrder = (events: NoteEvent[]) =>
-  events
-    .slice()
-    .sort(
-      (a, b) =>
-        a.measureNumber - b.measureNumber ||
-        a.voice.localeCompare(b.voice) ||
-        a.time - b.time ||
-        a.partId.localeCompare(b.partId)
-    )
+// タップ判定の閾値
+const TAP_MAX_DURATION_MS = 300
+const TAP_MAX_DISTANCE_PX = 10
 
-const getUniquePartIds = (events: NoteEvent[]) => {
-  return Array.from(new Set(events.map((event) => event.partId)))
+// 2分音符をデフォルトの音符の長さとする
+const DEFAULT_DURATION_BEATS = 2
+
+type PointerDownState = {
+  pointerId: number
+  clientX: number
+  clientY: number
+  timestamp: number
 }
 
-const getPartIdsFromScore = (
-  osmd: OpenSheetMusicDisplay | null,
-  events: NoteEvent[]
-) => {
-  const instrumentIds = osmd?.Sheet?.Instruments.map((instrument) => {
-    return instrument.IdString
-  }).filter((partId): partId is string => partId.length > 0)
+const getSvgElement = (note: object): SVGElement | null => {
+  if ('getSVGGElement' in note && typeof note.getSVGGElement === 'function') {
+    return note.getSVGGElement() as SVGElement | null
+  }
+  return null
+}
 
-  return instrumentIds && instrumentIds.length > 0
-    ? instrumentIds
-    : getUniquePartIds(events)
+const clearNoteHighlight = (note: object) => {
+  const svgElement = getSvgElement(note)
+  if (svgElement) {
+    svgElement.classList.remove('note-highlight')
+  } else if ('setColor' in note && typeof note.setColor === 'function') {
+    try {
+      note.setColor('#000000', {
+        applyToBeams: true,
+        applyToFlag: true,
+        applyToNoteheads: true,
+        applyToStem: true,
+        applyToTies: true,
+      })
+    } catch {
+      // ignore
+    }
+  }
+}
+
+const applyNoteHighlight = (note: object) => {
+  const svgElement = getSvgElement(note)
+  if (svgElement) {
+    svgElement.classList.add('note-highlight')
+  } else if ('setColor' in note && typeof note.setColor === 'function') {
+    try {
+      note.setColor('#FF0000', {
+        applyToBeams: true,
+        applyToFlag: true,
+        applyToNoteheads: true,
+        applyToStem: true,
+        applyToTies: true,
+      })
+    } catch {
+      // ignore
+    }
+  }
 }
 
 export const useNoteInteraction = (
@@ -51,204 +86,256 @@ export const useNoteInteraction = (
   parsedEvents: NoteEvent[],
   playNote: PlayNoteFn | null
 ) => {
-  const { selectedNoteId, setSelectedNoteId } = useScoreStore(
-    useShallow((state) => ({
-      selectedNoteId: state.selectedNoteId,
-      setSelectedNoteId: state.setSelectedNoteId,
-    }))
-  )
-  const selectedNoteIdRef = useRef<string | null>(selectedNoteId)
-  const noteEventMapRef = useRef<Map<string, NoteEvent[]>>(new Map())
+  const previousNoteRef = useRef<object | null>(null)
+  const pointerDownRef = useRef<PointerDownState | null>(null)
+  const setHighlightedNote = useScoreStore((state) => state.setHighlightedNote)
 
-  const syncSelectedClass = useCallback(
-    (root: HTMLDivElement | null, noteId: string | null) => {
-      if (!root) return
+  // SVG要素のキャッシュ（毎回querySelector を回避）
+  const svgCacheRef = useRef<SVGElement | null>(null)
+  // BoundingClientRect のキャッシュ（pointerdown 時に取得して pointerup で再利用）
+  const svgRectCacheRef = useRef<DOMRect | null>(null)
 
-      const noteElements = Array.from(root.querySelectorAll('[data-note-id]'))
-      noteElements.forEach((noteElement) => {
-        const isSelected = noteElement.getAttribute('data-note-id') === noteId
-        noteElement.classList.toggle(SELECTED_NOTE_CLASS, isSelected)
-      })
-    },
-    []
-  )
-
-  const assignNoteIds = useCallback(() => {
-    const root = containerRef.current
-    if (!root || parsedEvents.length === 0) {
-      noteEventMapRef.current = new Map()
-      return
-    }
-
-    const stafflines = Array.from(root.querySelectorAll(STAFFLINE_SELECTOR))
-    if (stafflines.length === 0) {
-      noteEventMapRef.current = new Map()
-      return
-    }
-
-    const sortedEvents = sortEventsForSvgOrder(parsedEvents)
-    const partIds = getPartIdsFromScore(osmdRef.current, sortedEvents)
-    if (partIds.length === 0) {
-      noteEventMapRef.current = new Map()
-      return
-    }
-
-    const eventsByPartId = new Map<string, NoteEvent[]>()
-    partIds.forEach((partId) => {
-      eventsByPartId.set(partId, [])
-    })
-
-    sortedEvents.forEach((event) => {
-      const partEvents = eventsByPartId.get(event.partId)
-      if (partEvents) {
-        partEvents.push(event)
+  // 小節番号で音符イベントをグループ化するインデックスを作成
+  const measureEventMap = useMemo(() => {
+    const map = new Map<number, NoteEvent[]>()
+    for (const ev of parsedEvents) {
+      if (!map.has(ev.measureNumber)) {
+        map.set(ev.measureNumber, [])
       }
-    })
-
-    const eventOffsets = new Map<string, number>()
-    partIds.forEach((partId) => {
-      eventOffsets.set(partId, 0)
-    })
-
-    noteEventMapRef.current = new Map()
-
-    stafflines.forEach((staffline, stafflineIndex) => {
-      const partId = partIds[stafflineIndex % partIds.length]
-      const partEvents = eventsByPartId.get(partId) || []
-      let eventOffset = eventOffsets.get(partId) || 0
-
-      staffline.setAttribute('data-part-id', partId)
-
-      const noteElements = Array.from(staffline.querySelectorAll(NOTE_SELECTOR))
-      noteElements.forEach((noteElement) => {
-        const event = partEvents[eventOffset]
-        if (!event) return
-
-        const chordEvents: NoteEvent[] = [event]
-        let nextIdx = eventOffset + 1
-        while (nextIdx < partEvents.length) {
-          const next = partEvents[nextIdx]
-          if (next.time === event.time && next.voice === event.voice) {
-            chordEvents.push(next)
-            nextIdx++
-          } else {
-            break
-          }
-        }
-
-        const noteId = `${partId}:${eventOffset}`
-        noteElement.setAttribute('data-part-id', partId)
-        noteElement.setAttribute('data-note-id', noteId)
-        noteElement.classList.toggle(
-          SELECTED_NOTE_CLASS,
-          noteId === selectedNoteIdRef.current
-        )
-
-        noteEventMapRef.current.set(noteId, chordEvents)
-        eventOffset = nextIdx
-      })
-
-      eventOffsets.set(partId, eventOffset)
-    })
-
-    syncSelectedClass(root, selectedNoteIdRef.current)
-  }, [containerRef, osmdRef, parsedEvents, syncSelectedClass])
-
-  useEffect(() => {
-    selectedNoteIdRef.current = selectedNoteId
-    syncSelectedClass(containerRef.current, selectedNoteId)
-  }, [containerRef, selectedNoteId, syncSelectedClass])
-
-  useEffect(() => {
-    const root = containerRef.current
-    if (!root) return
-
-    const refresh = () => {
-      assignNoteIds()
+      map.get(ev.measureNumber)!.push(ev)
     }
+    return map
+  }, [parsedEvents])
 
-    refresh()
+  // ノート検索と再生のコアロジック（pointerup から呼ばれる）
+  const processNoteClick = useCallback(
+    (clientX: number, clientY: number) => {
+      if (!containerRef.current || !osmdRef.current) return
 
-    const observer = new MutationObserver(() => {
-      refresh()
-    })
+      const osmd = osmdRef.current
 
-    observer.observe(root, {
-      childList: true,
-      subtree: true,
-    })
+      // SVG要素をキャッシュから取得（無ければ検索してキャッシュ）
+      let svg = svgCacheRef.current
+      if (!svg || !svg.isConnected) {
+        svg = containerRef.current.querySelector('svg')
+        svgCacheRef.current = svg
+      }
+      if (!svg) return
 
-    return () => {
-      observer.disconnect()
-    }
-  }, [assignNoteIds, containerRef])
+      // BoundingRect はキャッシュを優先利用（pointerdown 時に取得済み）
+      const svgRect = svgRectCacheRef.current ?? svg.getBoundingClientRect()
 
-  const playClickedNote = useCallback(
-    (clickedNote: Element) => {
-      const noteId = clickedNote.getAttribute('data-note-id')
-      if (!noteId) return
+      const osmdX = (clientX - svgRect.left) / (10 * osmd.zoom)
+      const osmdY = (clientY - svgRect.top) / (10 * osmd.zoom)
 
-      const events = noteEventMapRef.current.get(noteId)
-      if (!events || events.length === 0) return
+      const clickPoint = new PointF2D(osmdX, osmdY)
+      const maxDistance = new PointF2D(3, 3)
 
-      // 休符・音符どちらでも選択状態（色）は更新する
-      setSelectedNoteId(noteId)
-
-      // 再生可能なイベント（休符・タイ継続を除く）をフィルタリング
-      const playableEvents = events.filter(
-        (e) => !e.isRest && !e.isTieContinuation
+      const graphicalNote = osmd.GraphicSheet.GetNearestNote(
+        clickPoint,
+        maxDistance
       )
-      if (playableEvents.length === 0) return
-      if (typeof playNote !== 'function') return
 
-      // 和音の場合は全ての音を同時に鳴らす
-      playableEvents.forEach((event) => {
-        playNote(event.samplerId, event.playbackKey, event.duration)
-      })
-    },
-    [playNote, setSelectedNoteId]
-  )
-
-  const handleScoreClick: MouseEventHandler<HTMLDivElement> = useCallback(
-    (e) => {
-      if (!containerRef.current) return
-      if (!(e.target instanceof Element)) return
-      const clickTarget = e.target
-
-      const directNote = clickTarget.closest('[data-note-id]')
-      if (directNote) {
-        playClickedNote(directNote)
+      if (!graphicalNote) {
         return
       }
 
-      const clickX = e.clientX
-      const clickY = e.clientY
-      const HIT_RADIUS = 48
+      const sourceNote = graphicalNote.sourceNote
 
-      const allNotes = Array.from(
-        containerRef.current.querySelectorAll('[data-note-id]')
+      // 前回のハイライトを解除
+      if (
+        previousNoteRef.current &&
+        previousNoteRef.current !== graphicalNote
+      ) {
+        clearNoteHighlight(previousNoteRef.current)
+      }
+
+      // 今回の音符をハイライト
+      applyNoteHighlight(graphicalNote)
+      previousNoteRef.current = graphicalNote
+
+      const timeInTicks = Math.round(
+        sourceNote.getAbsoluteTimestamp().RealValue * 4 * 192
       )
-      if (allNotes.length === 0) return
 
-      let closest: Element | null = null
-      let minDistance = Infinity
+      if (sourceNote.isRest()) {
+        setHighlightedNote(timeInTicks)
+        return
+      }
 
-      allNotes.forEach((note) => {
-        const rect = note.getBoundingClientRect()
-        const cx = rect.left + rect.width / 2
-        const cy = rect.top + rect.height / 2
-        const d = Math.hypot(clickX - cx, clickY - cy)
-        if (d <= HIT_RADIUS && d < minDistance) {
-          minDistance = d
-          closest = note
+      // OSMDの表示ピッチから推定される note string を計算
+      const pitch = sourceNote.TransposedPitch || sourceNote.Pitch
+      let osmdPitchStr = ''
+
+      if (pitch) {
+        const fundamental = pitch.FundamentalNote
+        const octave = pitch.Octave
+        const alter = pitch.AccidentalHalfTones
+
+        const semitone = fundamental + alter
+        const octaveShift = Math.floor(semitone / 12)
+        const normalizedSemitone = ((semitone % 12) + 12) % 12
+        const finalOctave = octave + octaveShift
+
+        osmdPitchStr = `${SEMITONE_TO_NOTE[normalizedSemitone]}${finalOctave}`
+      } else if (
+        'displayStepUnpitched' in sourceNote &&
+        sourceNote.displayStepUnpitched !== undefined
+      ) {
+        const rawNote = sourceNote as {
+          displayStepUnpitched: number
+          displayOctaveUnpitched?: number
         }
-      })
+        const fundamental = rawNote.displayStepUnpitched
+        const octave = rawNote.displayOctaveUnpitched ?? 4
+        const semitone = fundamental
+        const octaveShift = Math.floor(semitone / 12)
+        const normalizedSemitone = ((semitone % 12) + 12) % 12
+        const finalOctave = octave + octaveShift
 
-      if (closest) {
-        playClickedNote(closest)
+        osmdPitchStr = `${SEMITONE_TO_NOTE[normalizedSemitone]}${finalOctave}`
+      }
+
+      let partId = ''
+      try {
+        if (sourceNote.ParentStaff?.ParentInstrument?.IdString) {
+          partId = sourceNote.ParentStaff.ParentInstrument.IdString
+        }
+      } catch {
+        console.warn('Could not extract part ID from sourceNote.')
+      }
+
+      let voiceId = ''
+      try {
+        if (sourceNote.ParentVoiceEntry?.ParentVoice?.VoiceId !== undefined) {
+          voiceId = String(sourceNote.ParentVoiceEntry.ParentVoice.VoiceId)
+        }
+      } catch {
+        console.warn('Could not extract voice ID from sourceNote.')
+      }
+
+      // parsedEventsの中から、クリックした音符に該当するイベントを探す
+      const measureNum = sourceNote.SourceMeasure.MeasureNumber
+
+      // 小節番号インデックスから対象小節 of イベントリストを取得
+      const eventsInMeasureTotal = measureEventMap.get(measureNum) || []
+
+      // 声部(Voice)も一致するイベントを優先してフィルタリング
+      let eventsInMeasure = eventsInMeasureTotal.filter(
+        (ev) =>
+          (!partId || ev.partId === partId) &&
+          (!voiceId || ev.voice === voiceId)
+      )
+
+      // 声部フィルタで候補が空になった場合は、声部フィルタなしでフォールバック
+      if (eventsInMeasure.length === 0) {
+        eventsInMeasure = eventsInMeasureTotal.filter(
+          (ev) => !partId || ev.partId === partId
+        )
+      }
+
+      // タイ継続音 (isTieContinuation) もマッチング対象に含める (isRest のみ除外)
+      const activeEventsInMeasure = eventsInMeasure.filter((ev) => !ev.isRest)
+
+      // 1. 同一小節内で表示ピッチが一致するものを最優先で探す
+      let bestEvent =
+        activeEventsInMeasure.find((ev) => ev.displayPitch === osmdPitchStr) ||
+        null
+
+      let minTimeDiff = Infinity
+
+      // 2. 見つからない場合、同小節内で最も近い時間のイベントを探す
+      if (!bestEvent && activeEventsInMeasure.length > 0) {
+        for (const ev of activeEventsInMeasure) {
+          const diff = Math.abs(ev.time - timeInTicks)
+          if (diff < minTimeDiff) {
+            minTimeDiff = diff
+            bestEvent = ev
+          }
+        }
+      }
+
+      let instrumentName = 'piano'
+      try {
+        if (sourceNote.ParentStaff?.ParentInstrument?.Name) {
+          instrumentName = sourceNote.ParentStaff.ParentInstrument.Name
+        }
+      } catch {
+        console.warn('Could not extract instrument name, defaulting to piano.')
+      }
+
+      const samplerId = bestEvent
+        ? bestEvent.samplerId
+        : instrumentName.toLowerCase().includes('drum')
+          ? 'drum'
+          : 'piano'
+      const playbackKey = bestEvent ? bestEvent.playbackKey : osmdPitchStr
+      const selectedNoteTime = bestEvent ? bestEvent.time : timeInTicks
+
+      setHighlightedNote(selectedNoteTime)
+
+      if (playNote) {
+        playNote(samplerId, playbackKey, DEFAULT_DURATION_BEATS)
       }
     },
-    [containerRef, playClickedNote]
+    [containerRef, osmdRef, playNote, measureEventMap, setHighlightedNote]
   )
-  return { handleScoreClick }
+
+  // Phase 1: pointerdown — 座標・タイムスタンプを記録（BoundingRect もここでキャッシュ）
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      // Phase 3: 再生中はタップ記録自体を行わない
+      if (useScoreStore.getState().isPlaying) return
+
+      pointerDownRef.current = {
+        pointerId: e.pointerId,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        timestamp: performance.now(),
+      }
+
+      // BoundingRect を pointerdown 時点でキャッシュ（レイアウト再計算は1回だけ）
+      let svg = svgCacheRef.current
+      if (!svg || !svg.isConnected) {
+        svg = containerRef.current?.querySelector('svg') ?? null
+        svgCacheRef.current = svg
+      }
+      if (svg) {
+        svgRectCacheRef.current = svg.getBoundingClientRect()
+      }
+    },
+    [containerRef]
+  )
+
+  // Phase 1: pointerup — タップ判定を行い、条件を満たした場合のみノート処理を実行
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const downState = pointerDownRef.current
+      pointerDownRef.current = null
+
+      if (!downState) return
+
+      // 同一ポインターか確認
+      if (e.pointerId !== downState.pointerId) return
+
+      // Phase 3: 再生中ガード（pointerdown 後に再生が開始された場合のフォールバック）
+      if (useScoreStore.getState().isPlaying) return
+
+      const elapsed = performance.now() - downState.timestamp
+      const dx = e.clientX - downState.clientX
+      const dy = e.clientY - downState.clientY
+      const distance = Math.sqrt(dx * dx + dy * dy)
+
+      // タップ判定: 時間が短く、移動距離が小さい場合のみ有効なタップとして処理
+      if (elapsed > TAP_MAX_DURATION_MS || distance > TAP_MAX_DISTANCE_PX) {
+        return
+      }
+
+      // pointerdown 時の座標を使ってノートを検索・再生
+      processNoteClick(downState.clientX, downState.clientY)
+    },
+    [processNoteClick]
+  )
+
+  return { handlePointerDown, handlePointerUp }
 }
