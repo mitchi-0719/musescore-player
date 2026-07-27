@@ -8,7 +8,7 @@ import { useNoteInteraction } from '../hooks/useNoteInteraction'
 import { useOSMD } from '../hooks/useOSMD'
 import { parseMusicXmlForEvents } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
-import { ControlModal } from './ControlModal'
+import { ControlModal } from './controlModal/ControlModal'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
 const TICKS_PER_QUARTER = 192
@@ -128,7 +128,7 @@ export const ScorePreview = () => {
     [osmdRef, syncPlaybackCursor]
   )
 
-  const { play, stop, playNote } = useAudioPlayer(parsedEvents, {
+  const { play, stop, playNote, mixerControls } = useAudioPlayer(parsedEvents, {
     onNoteStart: (event) => syncPlaybackCursor(event.time),
     onPlaybackStart: startPlaybackCursor,
     onPlaybackStop: () => {
@@ -176,7 +176,7 @@ export const ScorePreview = () => {
               </AlertDescription>
             </Alert>
           )}
-          <ControlModal play={play} stop={stop} />
+          <ControlModal play={play} stop={stop} mixerControls={mixerControls} />
         </div>
       )}
     </section>
