@@ -4,14 +4,23 @@ import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 
 import { waitFrame } from '../lib/waitFrame'
 
+// 楽譜を初回表示する際の拡大率。必要に応じてここを調整する。
+export const DEFAULT_SCORE_ZOOM = 0.35
+
 export const useOSMD = (
   musicXml: string | null,
-  musicMxl: Uint8Array | null = null
+  musicMxl: Uint8Array | null = null,
+  zoom = DEFAULT_SCORE_ZOOM
 ) => {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [renderError, setRenderError] = useState<string | null>(null)
   const [isRendering, setIsRendering] = useState(false)
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null)
+  const zoomRef = useRef(zoom)
+
+  useEffect(() => {
+    zoomRef.current = zoom
+  }, [zoom])
 
   useEffect(() => {
     let lastWidth = window.innerWidth
@@ -122,7 +131,8 @@ export const useOSMD = (
           return
         }
 
-        osmd.zoom = 0.4
+        // 描画準備中に変更された倍率も、初回描画に反映する。
+        osmd.zoom = zoomRef.current
 
         if (!isCancelled) {
           console.log('[useOSMD] Calling osmd.render()')
