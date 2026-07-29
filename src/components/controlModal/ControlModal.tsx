@@ -10,12 +10,20 @@ type ControlModalProps = {
   play: () => void
   stop: () => void
   mixerControls: AudioMixerControls
+  zoomIn: () => void
+  zoomOut: () => void
+  zoomPercentage: number
+  isZoomRendering: boolean
 }
 
 export const ControlModal: FC<ControlModalProps> = ({
   play,
   stop,
   mixerControls,
+  zoomIn,
+  zoomOut,
+  zoomPercentage,
+  isZoomRendering,
 }) => {
   const { state: isOpen, toggle: toggleDrawer } = useOnOffState(false)
   const stopEventPropagation = (event: { stopPropagation: () => void }) => {
@@ -45,6 +53,10 @@ export const ControlModal: FC<ControlModalProps> = ({
           toggleOpen={toggleDrawer}
           play={play}
           stop={stop}
+          zoomIn={zoomIn}
+          zoomOut={zoomOut}
+          zoomPercentage={zoomPercentage}
+          isZoomRendering={isZoomRendering}
         />
       </div>
 
@@ -60,20 +72,60 @@ type HeaderProps = {
   toggleOpen: () => void
   play: () => void
   stop: () => void
+  zoomIn: () => void
+  zoomOut: () => void
+  zoomPercentage: number
+  isZoomRendering: boolean
 }
 
-const DrawerHeader: FC<HeaderProps> = ({ isOpen, toggleOpen, play, stop }) => {
+const DrawerHeader: FC<HeaderProps> = ({
+  isOpen,
+  toggleOpen,
+  play,
+  stop,
+  zoomIn,
+  zoomOut,
+  zoomPercentage,
+  isZoomRendering,
+}) => {
   const isPlaying = useScoreStore((state) => state.isPlaying)
 
   return (
-    <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-1">
-      <button
-        disabled
-        className="flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-md bg-gray-50 text-gray-500 opacity-50"
-        aria-label="メモ"
-      >
-        <Icon name="edit" className="h-6 w-6" />
-      </button>
+    <div className="grid grid-cols-[1fr_auto_1fr] items-center border-b border-gray-200 bg-white px-4 py-1">
+      <div className="flex items-center justify-self-start">
+        <button
+          onClick={zoomOut}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100 active:scale-95"
+          aria-label="楽譜を縮小"
+        >
+          <Icon name="remove" size="small" />
+        </button>
+        <output
+          className="flex w-12 items-center justify-center text-center text-xs font-medium text-gray-700 tabular-nums"
+          aria-label={
+            isZoomRendering
+              ? '楽譜を再描画しています'
+              : `現在の楽譜サイズ: ${zoomPercentage}%`
+          }
+          aria-live="polite"
+        >
+          {isZoomRendering ? (
+            <span
+              className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600"
+              aria-hidden="true"
+            />
+          ) : (
+            `${zoomPercentage}%`
+          )}
+        </output>
+        <button
+          onClick={zoomIn}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100 active:scale-95"
+          aria-label="楽譜を拡大"
+        >
+          <Icon name="add" size="small" />
+        </button>
+      </div>
 
       <button
         onClick={() => {
@@ -87,21 +139,21 @@ const DrawerHeader: FC<HeaderProps> = ({ isOpen, toggleOpen, play, stop }) => {
         aria-label={isPlaying ? '停止' : '再生'}
       >
         {isPlaying ? (
-          <Icon name="pause" className="h-7 w-7" />
+          <Icon name="pause" size="large" />
         ) : (
-          <Icon name="play" className="h-7 w-7" />
+          <Icon name="play" size="large" />
         )}
       </button>
 
       <button
         onClick={toggleOpen}
-        className="flex h-8 w-8 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100"
+        className="flex h-8 w-8 items-center justify-center justify-self-end rounded-full text-gray-600 transition-colors hover:bg-gray-100"
         aria-label={isOpen ? 'ドロワーを閉じる' : 'ドロワーを開く'}
       >
         {isOpen ? (
-          <Icon name="arrow-down" className="h-7 w-7" />
+          <Icon name="arrow-down" size="large" />
         ) : (
-          <Icon name="arrow-up" className="h-7 w-7" />
+          <Icon name="arrow-up" size="large" />
         )}
       </button>
     </div>

@@ -1,11 +1,11 @@
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { Cursor } from 'opensheetmusicdisplay'
 import { useShallow } from 'zustand/shallow'
 
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
 import { useNoteInteraction } from '../hooks/useNoteInteraction'
-import { useOSMD } from '../hooks/useOSMD'
+import { DEFAULT_SCORE_ZOOM, useOSMD } from '../hooks/useOSMD'
 import { parseMusicXmlForEvents } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
 import { ControlModal } from './controlModal/ControlModal'
@@ -15,6 +15,9 @@ const TICKS_PER_QUARTER = 192
 const OSMD_TIMESTAMP_TO_TICKS = 4 * TICKS_PER_QUARTER
 const CURSOR_ADVANCE_LIMIT = 10000
 const MIN_CURSOR_WIDTH_PX = 4
+const SCORE_ZOOM_STEP_PERCENTAGE = 15
+const MIN_SCORE_ZOOM_PERCENTAGE = 25
+const MAX_SCORE_ZOOM_PERCENTAGE = 250
 
 const getCursorTicks = (cursor: Cursor): number | null => {
   try {
@@ -50,6 +53,11 @@ const syncCursorImageSize = (cursorElement?: HTMLImageElement | null) => {
 export const ScorePreview = () => {
   console.log('[ScorePreview] rendering...')
   const lastCursorEventTimeRef = useRef<number | null>(null)
+  const lastCursorTopRef = useRef<string | null>(null)
+  const scoreZoomPercentageRef = useRef(100)
+  const zoomRenderFrameRef = useRef<number | null>(null)
+  const [scoreZoomPercentage, setScoreZoomPercentage] = useState(100)
+  const [isZoomRendering, setIsZoomRendering] = useState(false)
   const { musicXml, musicMxl, isLoading } = useScoreStore(
     useShallow((state) => ({
       musicXml: state.musicXml,
@@ -60,13 +68,43 @@ export const ScorePreview = () => {
 
   const { containerRef, renderError, isRendering, osmdRef } = useOSMD(
     musicXml,
-    musicMxl
+    musicMxl,
+    (DEFAULT_SCORE_ZOOM * scoreZoomPercentage) / 100
   )
+
+  useEffect(() => {
+    return () => {
+      if (zoomRenderFrameRef.current !== null) {
+        cancelAnimationFrame(zoomRenderFrameRef.current)
+      }
+    }
+  }, [])
 
   const parsedEvents = useMemo(() => {
     if (!musicXml) return []
     return parseMusicXmlForEvents(musicXml)
   }, [musicXml])
+
+  const followPlaybackCursor = useCallback(
+    (cursorElement?: HTMLImageElement | null) => {
+      if (!cursorElement) return
+
+      const cursorTop = cursorElement.style.top
+      if (!cursorTop || cursorTop === lastCursorTopRef.current) return
+
+      lastCursorTopRef.current = cursorTop
+      const headerHeight =
+        document.querySelector<HTMLElement>('[data-app-header]')
+          ?.offsetHeight ?? 0
+      cursorElement.style.scrollMarginTop = `${headerHeight + 60}px`
+      cursorElement.scrollIntoView({
+        block: 'start',
+        inline: 'nearest',
+        behavior: 'auto',
+      })
+    },
+    []
+  )
 
   const syncPlaybackCursor = useCallback(
     (eventTime: number) => {
@@ -104,9 +142,10 @@ export const ScorePreview = () => {
       }
 
       syncCursorImageSize(cursor.cursorElement)
+      followPlaybackCursor(cursor.cursorElement)
       lastCursorEventTimeRef.current = targetTicks
     },
-    [osmdRef]
+    [followPlaybackCursor, osmdRef]
   )
 
   const startPlaybackCursor = useCallback(
@@ -115,6 +154,7 @@ export const ScorePreview = () => {
       if (!cursor) return
 
       lastCursorEventTimeRef.current = null
+      lastCursorTopRef.current = null
 
       if (startTicks > 0) {
         syncPlaybackCursor(startTicks)
@@ -124,8 +164,9 @@ export const ScorePreview = () => {
       cursor.reset()
       cursor.show()
       syncCursorImageSize(cursor.cursorElement)
+      followPlaybackCursor(cursor.cursorElement)
     },
-    [osmdRef, syncPlaybackCursor]
+    [followPlaybackCursor, osmdRef, syncPlaybackCursor]
   )
 
   const { play, stop, playNote, mixerControls } = useAudioPlayer(parsedEvents, {
@@ -133,6 +174,7 @@ export const ScorePreview = () => {
     onPlaybackStart: startPlaybackCursor,
     onPlaybackStop: () => {
       lastCursorEventTimeRef.current = null
+      lastCursorTopRef.current = null
       osmdRef.current?.cursor?.hide()
     },
   })
@@ -143,6 +185,91 @@ export const ScorePreview = () => {
     parsedEvents,
     playNote
   )
+
+  const changeScoreZoom = useCallback(
+    (delta: number) => {
+      const nextZoomPercentage = Math.min(
+        MAX_SCORE_ZOOM_PERCENTAGE,
+        Math.max(
+          MIN_SCORE_ZOOM_PERCENTAGE,
+          scoreZoomPercentageRef.current + delta
+        )
+      )
+      if (nextZoomPercentage === scoreZoomPercentageRef.current) return
+
+      scoreZoomPercentageRef.current = nextZoomPercentage
+      setScoreZoomPercentage(nextZoomPercentage)
+      setIsZoomRendering(true)
+
+      // まず数値を描画し、その次のフレームで楽譜を更新する。
+      if (zoomRenderFrameRef.current !== null) return
+
+      zoomRenderFrameRef.current = requestAnimationFrame(() => {
+        zoomRenderFrameRef.current = requestAnimationFrame(() => {
+          zoomRenderFrameRef.current = null
+
+          const osmd = osmdRef.current
+          if (!osmd) {
+            setIsZoomRendering(false)
+            return
+          }
+
+          try {
+            osmd.zoom =
+              (DEFAULT_SCORE_ZOOM * scoreZoomPercentageRef.current) / 100
+            osmd.render()
+          } finally {
+            setIsZoomRendering(false)
+          }
+        })
+      })
+    },
+    [osmdRef]
+  )
+
+  const zoomIn = useCallback(
+    () => changeScoreZoom(SCORE_ZOOM_STEP_PERCENTAGE),
+    [changeScoreZoom]
+  )
+  const zoomOut = useCallback(
+    () => changeScoreZoom(-SCORE_ZOOM_STEP_PERCENTAGE),
+    [changeScoreZoom]
+  )
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    let overlay: HTMLDivElement | null = null
+    let wasPlaying = useScoreStore.getState().isPlaying
+    const addOverlay = () => {
+      if (overlay || !container) return
+      overlay = document.createElement('div')
+      overlay.style.position = 'absolute'
+      overlay.style.inset = '0'
+      overlay.style.zIndex = '10'
+      overlay.style.touchAction = 'manipulation'
+      container.appendChild(overlay)
+    }
+    const removeOverlay = () => {
+      if (!overlay) return
+      overlay.remove()
+      overlay = null
+    }
+    if (wasPlaying) addOverlay()
+    const unsubscribe = useScoreStore.subscribe((state) => {
+      if (state.isPlaying === wasPlaying) return
+      wasPlaying = state.isPlaying
+      if (state.isPlaying) {
+        addOverlay()
+      } else {
+        removeOverlay()
+      }
+    })
+    return () => {
+      unsubscribe()
+      removeOverlay()
+    }
+  }, [containerRef])
 
   const isLoadingScore = Boolean((isLoading || isRendering) && !musicXml)
 
@@ -157,7 +284,7 @@ export const ScorePreview = () => {
         <div className="overflow-x-auto rounded-lg bg-white">
           <div
             ref={containerRef}
-            className="relative w-full bg-white"
+            className="score-preview relative w-full bg-white"
             style={{
               touchAction: 'manipulation',
               willChange: 'transform',
@@ -176,7 +303,15 @@ export const ScorePreview = () => {
               </AlertDescription>
             </Alert>
           )}
-          <ControlModal play={play} stop={stop} mixerControls={mixerControls} />
+          <ControlModal
+            play={play}
+            stop={stop}
+            mixerControls={mixerControls}
+            zoomIn={zoomIn}
+            zoomOut={zoomOut}
+            zoomPercentage={scoreZoomPercentage}
+            isZoomRendering={isZoomRendering}
+          />
         </div>
       )}
     </section>

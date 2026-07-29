@@ -4,7 +4,7 @@ import * as Tone from 'tone'
 
 import { DRUM_MAP } from '../constants/drum'
 import { PIANO_MAP } from '../constants/piano'
-import type { NoteEvent } from '../lib/musicXmlParser'
+import type { NoteEvent, SamplerId } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
 
 type AudioPlayerOptions = {
@@ -56,6 +56,19 @@ type MixerState = {
   parts: Record<string, PartMixerState>
 }
 
+type SamplerConfig = {
+  urls: Record<string, string>
+  baseUrl: string
+}
+
+const SAMPLER_CONFIGS: Record<SamplerId, SamplerConfig> = {
+  piano: { urls: PIANO_MAP, baseUrl: '/sounds/piano/' },
+  drum: { urls: DRUM_MAP, baseUrl: '/sounds/drums/' },
+  clap: { urls: { C4: 'Clap.wav' }, baseUrl: '/sounds/clap/' },
+}
+const PIANO_SAMPLE_KEY_BY_MIDI = new Map<number, string>(
+  Object.keys(PIANO_MAP).map((key) => [Tone.Frequency(key).toMidi(), key])
+)
 const DEFAULT_VOLUME = 1
 const MAX_VOLUME = 2
 const TICKS_PER_QUARTER = 192
@@ -63,23 +76,103 @@ const DEFAULT_MEASURE_TICKS = TICKS_PER_QUARTER * 4
 const METRONOME_ACCENT_NOTE = 'C6'
 const METRONOME_BEAT_NOTE = 'C5'
 const METRONOME_BEAT_VOLUME_MULTIPLIER = 0.7
+const MAX_PART_BOOST_DB = 12
+const MAX_MASTER_BOOST_DB = 6
+const MASTER_LIMITER_THRESHOLD_DB = -1
+const VOLUME_RAMP_SECONDS = 0.03
 // ミキサーの表示値は維持したまま、ドラム音源の出力だけを少し抑える。
 const DRUM_VOLUME_MULTIPLIER = 0.8
 const clampVolume = (volume: number) =>
   Math.min(MAX_VOLUME, Math.max(0, volume))
+const mixerValueToDecibels = (volume: number, maxBoostDb: number) => {
+  const clampedVolume = clampVolume(volume)
+
+  if (clampedVolume === 0) return -Infinity
+  if (clampedVolume <= DEFAULT_VOLUME) {
+    return Tone.gainToDb(clampedVolume)
+  }
+
+  return (clampedVolume - DEFAULT_VOLUME) * maxBoostDb
+}
 const getSamplerVolumeMultiplier = (samplerId: string) =>
   samplerId === 'drum' ? DRUM_VOLUME_MULTIPLIER : 1
 const getDefaultPartState = (): PartMixerState => ({
   volume: DEFAULT_VOLUME,
   isMuted: false,
 })
+const getClosestPianoSampleKey = (midi: number) => {
+  for (let interval = 0; interval < 96; interval += 1) {
+    const upperKey = PIANO_SAMPLE_KEY_BY_MIDI.get(midi + interval)
+    if (upperKey) return upperKey
+
+    const lowerKey = PIANO_SAMPLE_KEY_BY_MIDI.get(midi - interval)
+    if (lowerKey) return lowerKey
+  }
+
+  return 'C4'
+}
+const getRequiredSamplerConfigs = (
+  parsedEvents: NoteEvent[]
+): Partial<Record<SamplerId, SamplerConfig>> => {
+  const requiredKeys: Record<SamplerId, Set<string>> = {
+    piano: new Set(),
+    drum: new Set(),
+    clap: new Set(),
+  }
+
+  parsedEvents.forEach((event) => {
+    if (event.isRest) return
+
+    if (event.samplerId === 'piano') {
+      requiredKeys.piano.add(
+        getClosestPianoSampleKey(Tone.Frequency(event.playbackKey).toMidi())
+      )
+      return
+    }
+
+    requiredKeys[event.samplerId].add(event.playbackKey)
+  })
+
+  return Object.fromEntries(
+    (Object.keys(requiredKeys) as SamplerId[]).flatMap((samplerId) => {
+      const keys = requiredKeys[samplerId]
+      if (keys.size === 0) return []
+
+      const config = SAMPLER_CONFIGS[samplerId]
+      const urls = Object.fromEntries(
+        Array.from(keys, (key) => [key, config.urls[key]]).filter(
+          (entry): entry is [string, string] => Boolean(entry[1])
+        )
+      )
+
+      return Object.keys(urls).length > 0
+        ? [[samplerId, { urls, baseUrl: config.baseUrl }]]
+        : []
+    })
+  )
+}
+const createSamplerFromSharedBuffers = (
+  buffers: Tone.ToneAudioBuffers,
+  sampleKeys: string[]
+) =>
+  new Tone.Sampler({
+    urls: Object.fromEntries(sampleKeys.map((key) => [key, buffers.get(key)])),
+  })
 
 export const useAudioPlayer = (
   parsedEvents: NoteEvent[],
   options: AudioPlayerOptions = {}
 ) => {
   const samplers = useRef<Record<string, Tone.Sampler>>({})
+  const sharedSampleBuffersRef = useRef<
+    Partial<Record<SamplerId, Tone.ToneAudioBuffers>>
+  >({})
+  const partSamplersRef = useRef<Record<string, Tone.Sampler>>({})
+  const partChannelsRef = useRef<Record<string, Tone.Channel>>({})
+  const masterChannelRef = useRef<Tone.Channel | null>(null)
+  const masterLimiterRef = useRef<Tone.Limiter | null>(null)
   const metronomeSynthRef = useRef<Tone.Synth | null>(null)
+  const metronomeChannelRef = useRef<Tone.Channel | null>(null)
   const metronomeLoopRef = useRef<Tone.Loop | null>(null)
   const isPlaying = useScoreStore((state) => state.isPlaying)
   const setIsPlaying = useScoreStore((state) => state.setIsPlaying)
@@ -91,6 +184,9 @@ export const useAudioPlayer = (
   const hasObservedPlaybackStateRef = useRef(false)
   const activePartIdsRef = useRef<Set<string>>(new Set())
   const measureStartTicksRef = useRef<Set<number>>(new Set())
+  const [loadedSampleSignature, setLoadedSampleSignature] = useState<
+    string | null
+  >(null)
   const [mixerState, setMixerState] = useState<MixerState>({
     masterVolume: DEFAULT_VOLUME,
     metronomeVolume: DEFAULT_VOLUME,
@@ -130,6 +226,46 @@ export const useAudioPlayer = (
     return Array.from(parts, ([id, name]) => ({ id, name }))
   }, [parsedEvents])
 
+  const partSamplerDescriptors = useMemo(() => {
+    const descriptors = new Map<
+      string,
+      { partId: string; samplerId: NoteEvent['samplerId'] }
+    >()
+
+    parsedEvents.forEach((event) => {
+      if (!event.partId) return
+
+      const key = `${event.partId}:${event.samplerId}`
+      if (!descriptors.has(key)) {
+        descriptors.set(key, {
+          partId: event.partId,
+          samplerId: event.samplerId,
+        })
+      }
+    })
+
+    return Array.from(descriptors.entries(), ([key, descriptor]) => ({
+      key,
+      ...descriptor,
+    }))
+  }, [parsedEvents])
+
+  const requiredSamplerConfigs = useMemo(
+    () => getRequiredSamplerConfigs(parsedEvents),
+    [parsedEvents]
+  )
+  const requiredSampleSignature = useMemo(
+    () =>
+      (Object.entries(requiredSamplerConfigs) as [SamplerId, SamplerConfig][])
+        .map(
+          ([samplerId, config]) =>
+            `${samplerId}:${Object.keys(config.urls).sort().join(',')}`
+        )
+        .sort()
+        .join('|'),
+    [requiredSamplerConfigs]
+  )
+
   const measureStartTicks = useMemo(() => {
     const startsByMeasure = new Map<number, number>()
 
@@ -151,33 +287,19 @@ export const useAudioPlayer = (
     measureStartTicksRef.current = measureStartTicks
   }, [measureStartTicks])
 
-  const getEventVelocity = useCallback((event: NoteEvent) => {
-    const state = mixerStateRef.current
-    const partState = state.parts[event.partId] ?? getDefaultPartState()
-    const hasSolo =
-      state.soloPartId !== null &&
-      activePartIdsRef.current.has(state.soloPartId)
-
-    if (state.metronomeSoloed || partState.isMuted) return 0
-    if (hasSolo && state.soloPartId !== event.partId) return 0
-
-    return clampVolume(
-      state.masterVolume *
-        partState.volume *
-        getSamplerVolumeMultiplier(event.samplerId)
-    )
-  }, [])
-
   useEffect(() => {
-    const instrumentConfigs = [
-      { id: 'piano', urls: PIANO_MAP, baseUrl: '/sounds/piano/' },
-      { id: 'drum', urls: DRUM_MAP, baseUrl: '/sounds/drums/' },
-      {
-        id: 'clap',
-        urls: { C4: 'Clap.wav' },
-        baseUrl: '/sounds/clap/',
-      },
-    ]
+    masterLimiterRef.current = new Tone.Limiter(
+      MASTER_LIMITER_THRESHOLD_DB
+    ).toDestination()
+    masterChannelRef.current = new Tone.Channel({
+      volume: mixerValueToDecibels(
+        mixerStateRef.current.masterVolume,
+        MAX_MASTER_BOOST_DB
+      ),
+    }).connect(masterLimiterRef.current)
+    metronomeChannelRef.current = new Tone.Channel().connect(
+      masterChannelRef.current
+    )
 
     metronomeSynthRef.current = new Tone.Synth({
       oscillator: { type: 'sine' },
@@ -187,11 +309,8 @@ export const useAudioPlayer = (
         sustain: 0,
         release: 0.04,
       },
-    }).toDestination()
+    }).connect(metronomeChannelRef.current)
     metronomeLoopRef.current = new Tone.Loop((time) => {
-      const state = mixerStateRef.current
-      if (state.metronomeMuted) return
-
       const tick = Math.round(Tone.getTransport().getTicksAtTime(time))
       const isMeasureStart =
         measureStartTicksRef.current.size > 0
@@ -202,29 +321,174 @@ export const useAudioPlayer = (
         isMeasureStart ? METRONOME_ACCENT_NOTE : METRONOME_BEAT_NOTE,
         '32n',
         time,
-        clampVolume(
-          state.masterVolume *
-            state.metronomeVolume *
-            (isMeasureStart ? 1 : METRONOME_BEAT_VOLUME_MULTIPLIER)
-        )
+        isMeasureStart ? 1 : METRONOME_BEAT_VOLUME_MULTIPLIER
       )
     }, '4n')
-
-    instrumentConfigs.forEach((config) => {
-      samplers.current[config.id] = new Tone.Sampler({
-        urls: config.urls,
-        baseUrl: config.baseUrl,
-      }).toDestination()
-    })
-
-    const currentSamplers = samplers.current
 
     return () => {
       metronomeLoopRef.current?.dispose()
       metronomeSynthRef.current?.dispose()
-      Object.values(currentSamplers).forEach((s) => s.dispose())
+      metronomeChannelRef.current?.dispose()
+      masterChannelRef.current?.dispose()
+      masterLimiterRef.current?.dispose()
+      metronomeChannelRef.current = null
+      masterChannelRef.current = null
+      masterLimiterRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    let isDisposed = false
+    const configEntries = Object.entries(requiredSamplerConfigs) as [
+      SamplerId,
+      SamplerConfig,
+    ][]
+
+    sharedSampleBuffersRef.current = {}
+
+    if (configEntries.length === 0) return
+
+    let loadedCount = 0
+    const sharedBuffers: Partial<Record<SamplerId, Tone.ToneAudioBuffers>> = {}
+    const handleBuffersLoaded = () => {
+      loadedCount += 1
+      if (!isDisposed && loadedCount === configEntries.length) {
+        setLoadedSampleSignature(requiredSampleSignature)
+      }
+    }
+
+    configEntries.forEach(([samplerId, config]) => {
+      sharedBuffers[samplerId] = new Tone.ToneAudioBuffers({
+        urls: config.urls,
+        baseUrl: config.baseUrl,
+        onload: handleBuffersLoaded,
+      })
+    })
+    sharedSampleBuffersRef.current = sharedBuffers
+
+    return () => {
+      isDisposed = true
+      Object.values(sharedBuffers).forEach((buffers) => buffers?.dispose())
+      sharedSampleBuffersRef.current = {}
+    }
+  }, [requiredSampleSignature, requiredSamplerConfigs])
+
+  useEffect(() => {
+    const masterChannel = masterChannelRef.current
+    if (!masterChannel || loadedSampleSignature !== requiredSampleSignature) {
+      return
+    }
+
+    const currentSamplers: Record<string, Tone.Sampler> = {}
+    const configEntries = Object.entries(requiredSamplerConfigs) as [
+      SamplerId,
+      SamplerConfig,
+    ][]
+
+    configEntries.forEach(([samplerId, config]) => {
+      const buffers = sharedSampleBuffersRef.current[samplerId]
+      if (!buffers) return
+
+      currentSamplers[samplerId] = createSamplerFromSharedBuffers(
+        buffers,
+        Object.keys(config.urls)
+      ).connect(masterChannel)
+    })
+    samplers.current = currentSamplers
+
+    return () => {
+      Object.values(currentSamplers).forEach((sampler) => sampler.dispose())
+      samplers.current = {}
+    }
+  }, [loadedSampleSignature, requiredSampleSignature, requiredSamplerConfigs])
+
+  useEffect(() => {
+    const masterChannel = masterChannelRef.current
+    if (!masterChannel || loadedSampleSignature !== requiredSampleSignature) {
+      return
+    }
+    const channels: Record<string, Tone.Channel> = {}
+    const partSamplers: Record<string, Tone.Sampler> = {}
+    const currentMixerState = mixerStateRef.current
+    const hasSolo =
+      currentMixerState.soloPartId !== null &&
+      activePartIdsRef.current.has(currentMixerState.soloPartId)
+
+    partDescriptors.forEach((part) => {
+      const partState =
+        currentMixerState.parts[part.id] ?? getDefaultPartState()
+
+      channels[part.id] = new Tone.Channel({
+        volume: mixerValueToDecibels(partState.volume, MAX_PART_BOOST_DB),
+        mute:
+          currentMixerState.metronomeSoloed ||
+          partState.isMuted ||
+          (hasSolo && currentMixerState.soloPartId !== part.id),
+      }).connect(masterChannel)
+    })
+
+    partSamplerDescriptors.forEach(({ key, partId, samplerId }) => {
+      const channel = channels[partId]
+      if (!channel) return
+
+      const buffers = sharedSampleBuffersRef.current[samplerId]
+      const config = requiredSamplerConfigs[samplerId]
+      if (!buffers || !config) return
+
+      partSamplers[key] = createSamplerFromSharedBuffers(
+        buffers,
+        Object.keys(config.urls)
+      ).connect(channel)
+    })
+
+    partChannelsRef.current = channels
+    partSamplersRef.current = partSamplers
+
+    return () => {
+      Object.values(partSamplers).forEach((sampler) => sampler.dispose())
+      Object.values(channels).forEach((channel) => channel.dispose())
+      partSamplersRef.current = {}
+      partChannelsRef.current = {}
+    }
+  }, [
+    loadedSampleSignature,
+    partDescriptors,
+    partSamplerDescriptors,
+    requiredSampleSignature,
+    requiredSamplerConfigs,
+  ])
+
+  useEffect(() => {
+    const hasSolo =
+      mixerState.soloPartId !== null &&
+      activePartIdsRef.current.has(mixerState.soloPartId)
+
+    Object.entries(partChannelsRef.current).forEach(([partId, channel]) => {
+      const partState = mixerState.parts[partId] ?? getDefaultPartState()
+
+      channel.volume.rampTo(
+        mixerValueToDecibels(partState.volume, MAX_PART_BOOST_DB),
+        VOLUME_RAMP_SECONDS
+      )
+      channel.mute =
+        mixerState.metronomeSoloed ||
+        partState.isMuted ||
+        (hasSolo && mixerState.soloPartId !== partId)
+    })
+
+    masterChannelRef.current?.volume.rampTo(
+      mixerValueToDecibels(mixerState.masterVolume, MAX_MASTER_BOOST_DB),
+      VOLUME_RAMP_SECONDS
+    )
+
+    if (metronomeChannelRef.current) {
+      metronomeChannelRef.current.volume.rampTo(
+        mixerValueToDecibels(mixerState.metronomeVolume, MAX_PART_BOOST_DB),
+        VOLUME_RAMP_SECONDS
+      )
+      metronomeChannelRef.current.mute = mixerState.metronomeMuted || hasSolo
+    }
+  }, [mixerState])
 
   // parsedEvents から Tone.Part を構築
   useEffect(() => {
@@ -246,11 +510,11 @@ export const useAudioPlayer = (
         onNoteStartRef.current?.(event)
       }, time)
 
-      const samplerId = event.samplerId
-      const sampler = samplers.current[samplerId] ?? samplers.current.piano
-      const velocity = getEventVelocity(event)
+      const sampler =
+        partSamplersRef.current[`${event.partId}:${event.samplerId}`]
+      const velocity = getSamplerVolumeMultiplier(event.samplerId)
 
-      if (sampler.loaded && velocity > 0) {
+      if (sampler?.loaded) {
         sampler.triggerAttackRelease(
           event.playbackKey,
           ticksToSeconds(event.duration),
@@ -265,7 +529,7 @@ export const useAudioPlayer = (
     return () => {
       partRef.current?.dispose()
     }
-  }, [getEventVelocity, parsedEvents, ticksToSeconds])
+  }, [parsedEvents, ticksToSeconds])
 
   // isPlaying に応じて Transport の開始/停止を同期
   useEffect(() => {
@@ -284,6 +548,7 @@ export const useAudioPlayer = (
       Tone.getTransport().stop()
       metronomeLoopRef.current?.stop()
       Object.values(samplers.current).forEach((s) => s.releaseAll())
+      Object.values(partSamplersRef.current).forEach((s) => s.releaseAll())
       metronomeSynthRef.current?.triggerRelease()
       if (hasObservedPlaybackStateRef.current) {
         onPlaybackStopRef.current?.()
@@ -312,10 +577,7 @@ export const useAudioPlayer = (
         playbackKey,
         durationSeconds,
         Tone.now(),
-        clampVolume(
-          mixerStateRef.current.masterVolume *
-            getSamplerVolumeMultiplier(samplerId)
-        )
+        getSamplerVolumeMultiplier(samplerId)
       )
     },
     []
