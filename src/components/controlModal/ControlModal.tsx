@@ -13,6 +13,7 @@ type ControlModalProps = {
   zoomIn: () => void
   zoomOut: () => void
   zoomPercentage: number
+  isZoomRendering: boolean
 }
 
 export const ControlModal: FC<ControlModalProps> = ({
@@ -22,6 +23,7 @@ export const ControlModal: FC<ControlModalProps> = ({
   zoomIn,
   zoomOut,
   zoomPercentage,
+  isZoomRendering,
 }) => {
   const { state: isOpen, toggle: toggleDrawer } = useOnOffState(false)
   const stopEventPropagation = (event: { stopPropagation: () => void }) => {
@@ -54,6 +56,7 @@ export const ControlModal: FC<ControlModalProps> = ({
           zoomIn={zoomIn}
           zoomOut={zoomOut}
           zoomPercentage={zoomPercentage}
+          isZoomRendering={isZoomRendering}
         />
       </div>
 
@@ -72,6 +75,7 @@ type HeaderProps = {
   zoomIn: () => void
   zoomOut: () => void
   zoomPercentage: number
+  isZoomRendering: boolean
 }
 
 const DrawerHeader: FC<HeaderProps> = ({
@@ -82,6 +86,7 @@ const DrawerHeader: FC<HeaderProps> = ({
   zoomIn,
   zoomOut,
   zoomPercentage,
+  isZoomRendering,
 }) => {
   const isPlaying = useScoreStore((state) => state.isPlaying)
 
@@ -96,10 +101,22 @@ const DrawerHeader: FC<HeaderProps> = ({
           <Icon name="remove" size="small" />
         </button>
         <output
-          className="w-12 text-center text-xs font-medium text-gray-700 tabular-nums"
-          aria-label={`現在の楽譜サイズ: ${zoomPercentage}%`}
+          className="flex w-12 items-center justify-center text-center text-xs font-medium text-gray-700 tabular-nums"
+          aria-label={
+            isZoomRendering
+              ? '楽譜を再描画しています'
+              : `現在の楽譜サイズ: ${zoomPercentage}%`
+          }
+          aria-live="polite"
         >
-          {zoomPercentage}%
+          {isZoomRendering ? (
+            <span
+              className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600"
+              aria-hidden="true"
+            />
+          ) : (
+            `${zoomPercentage}%`
+          )}
         </output>
         <button
           onClick={zoomIn}

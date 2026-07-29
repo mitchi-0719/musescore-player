@@ -56,6 +56,7 @@ export const ScorePreview = () => {
   const scoreZoomPercentageRef = useRef(100)
   const zoomRenderFrameRef = useRef<number | null>(null)
   const [scoreZoomPercentage, setScoreZoomPercentage] = useState(100)
+  const [isZoomRendering, setIsZoomRendering] = useState(false)
   const { musicXml, musicMxl, isLoading } = useScoreStore(
     useShallow((state) => ({
       musicXml: state.musicXml,
@@ -172,6 +173,7 @@ export const ScorePreview = () => {
 
       scoreZoomPercentageRef.current = nextZoomPercentage
       setScoreZoomPercentage(nextZoomPercentage)
+      setIsZoomRendering(true)
 
       // まず数値を描画し、その次のフレームで楽譜を更新する。
       if (zoomRenderFrameRef.current !== null) return
@@ -181,11 +183,18 @@ export const ScorePreview = () => {
           zoomRenderFrameRef.current = null
 
           const osmd = osmdRef.current
-          if (!osmd) return
+          if (!osmd) {
+            setIsZoomRendering(false)
+            return
+          }
 
-          osmd.zoom =
-            (DEFAULT_SCORE_ZOOM * scoreZoomPercentageRef.current) / 100
-          osmd.render()
+          try {
+            osmd.zoom =
+              (DEFAULT_SCORE_ZOOM * scoreZoomPercentageRef.current) / 100
+            osmd.render()
+          } finally {
+            setIsZoomRendering(false)
+          }
         })
       })
     },
@@ -240,6 +249,7 @@ export const ScorePreview = () => {
             zoomIn={zoomIn}
             zoomOut={zoomOut}
             zoomPercentage={scoreZoomPercentage}
+            isZoomRendering={isZoomRendering}
           />
         </div>
       )}
