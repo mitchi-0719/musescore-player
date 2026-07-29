@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
+import type { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 
 import { waitFrame } from '../lib/waitFrame'
 
@@ -105,6 +105,9 @@ export const useOSMD = (
         }
 
         console.log('[useOSMD] Initializing OpenSheetMusicDisplay')
+        const { OpenSheetMusicDisplay } = await import('opensheetmusicdisplay')
+        if (isCancelled) return
+
         const osmd = new OpenSheetMusicDisplay(container, {
           autoResize: false, // 画面サイズ変更時の自動リサイズをオフ（幅変更のみ自前で制御するため）
           backend: 'svg', // デモと同じくっきりしたSVG描画

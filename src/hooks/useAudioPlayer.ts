@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import * as Tone from 'tone'
+import type * as ToneModule from 'tone'
 
 import { DRUM_MAP } from '../constants/drum'
 import { PIANO_MAP } from '../constants/piano'
@@ -61,14 +61,43 @@ type SamplerConfig = {
   baseUrl: string
 }
 
+let _toneModule: typeof ToneModule | null = null
+let _toneModulePromise: Promise<typeof ToneModule> | null = null
+const getTone = async (): Promise<typeof ToneModule> => {
+  if (_toneModule) return _toneModule
+
+  if (!_toneModulePromise) {
+    _toneModulePromise = import('tone')
+      .then((module) => {
+        _toneModule = module
+        return module
+      })
+      .catch((error: unknown) => {
+        _toneModulePromise = null
+        throw error
+      })
+  }
+
+  return _toneModulePromise
+}
+
 const SAMPLER_CONFIGS: Record<SamplerId, SamplerConfig> = {
   piano: { urls: PIANO_MAP, baseUrl: '/sounds/piano/' },
   drum: { urls: DRUM_MAP, baseUrl: '/sounds/drums/' },
   clap: { urls: { C4: 'Clap.wav' }, baseUrl: '/sounds/clap/' },
 }
-const PIANO_SAMPLE_KEY_BY_MIDI = new Map<number, string>(
-  Object.keys(PIANO_MAP).map((key) => [Tone.Frequency(key).toMidi(), key])
-)
+const EMPTY_SAMPLER_CONFIGS: Partial<Record<SamplerId, SamplerConfig>> = {}
+let _pianoSampleKeyByMidi: Map<number, string> | null = null
+const getPianoSampleKeyByMidi = (
+  Tone: typeof ToneModule
+): Map<number, string> => {
+  if (!_pianoSampleKeyByMidi) {
+    _pianoSampleKeyByMidi = new Map(
+      Object.keys(PIANO_MAP).map((key) => [Tone.Frequency(key).toMidi(), key])
+    )
+  }
+  return _pianoSampleKeyByMidi
+}
 const DEFAULT_VOLUME = 1
 const MAX_VOLUME = 2
 const TICKS_PER_QUARTER = 192
@@ -85,6 +114,7 @@ const DRUM_VOLUME_MULTIPLIER = 0.8
 const clampVolume = (volume: number) =>
   Math.min(MAX_VOLUME, Math.max(0, volume))
 const mixerValueToDecibels = (volume: number, maxBoostDb: number) => {
+  const Tone = _toneModule!
   const clampedVolume = clampVolume(volume)
 
   if (clampedVolume === 0) return -Infinity
@@ -100,20 +130,25 @@ const getDefaultPartState = (): PartMixerState => ({
   volume: DEFAULT_VOLUME,
   isMuted: false,
 })
-const getClosestPianoSampleKey = (midi: number) => {
+const getClosestPianoSampleKey = (
+  midi: number,
+  pianoKeyMap: Map<number, string>
+) => {
   for (let interval = 0; interval < 96; interval += 1) {
-    const upperKey = PIANO_SAMPLE_KEY_BY_MIDI.get(midi + interval)
+    const upperKey = pianoKeyMap.get(midi + interval)
     if (upperKey) return upperKey
 
-    const lowerKey = PIANO_SAMPLE_KEY_BY_MIDI.get(midi - interval)
+    const lowerKey = pianoKeyMap.get(midi - interval)
     if (lowerKey) return lowerKey
   }
 
   return 'C4'
 }
 const getRequiredSamplerConfigs = (
-  parsedEvents: NoteEvent[]
+  parsedEvents: NoteEvent[],
+  Tone: typeof ToneModule
 ): Partial<Record<SamplerId, SamplerConfig>> => {
+  const pianoKeyMap = getPianoSampleKeyByMidi(Tone)
   const requiredKeys: Record<SamplerId, Set<string>> = {
     piano: new Set(),
     drum: new Set(),
@@ -125,7 +160,10 @@ const getRequiredSamplerConfigs = (
 
     if (event.samplerId === 'piano') {
       requiredKeys.piano.add(
-        getClosestPianoSampleKey(Tone.Frequency(event.playbackKey).toMidi())
+        getClosestPianoSampleKey(
+          Tone.Frequency(event.playbackKey).toMidi(),
+          pianoKeyMap
+        )
       )
       return
     }
@@ -152,41 +190,43 @@ const getRequiredSamplerConfigs = (
   )
 }
 const createSamplerFromSharedBuffers = (
-  buffers: Tone.ToneAudioBuffers,
+  buffers: ToneModule.ToneAudioBuffers,
   sampleKeys: string[]
-) =>
-  new Tone.Sampler({
+) => {
+  const Tone = _toneModule!
+  return new Tone.Sampler({
     urls: Object.fromEntries(sampleKeys.map((key) => [key, buffers.get(key)])),
   })
+}
 
 export const useAudioPlayer = (
   parsedEvents: NoteEvent[],
   options: AudioPlayerOptions = {}
 ) => {
-  const samplers = useRef<Record<string, Tone.Sampler>>({})
+  const samplers = useRef<Record<string, ToneModule.Sampler>>({})
   const sharedSampleBuffersRef = useRef<
-    Partial<Record<SamplerId, Tone.ToneAudioBuffers>>
+    Partial<Record<SamplerId, ToneModule.ToneAudioBuffers>>
   >({})
-  const partSamplersRef = useRef<Record<string, Tone.Sampler>>({})
-  const partChannelsRef = useRef<Record<string, Tone.Channel>>({})
-  const masterChannelRef = useRef<Tone.Channel | null>(null)
-  const masterLimiterRef = useRef<Tone.Limiter | null>(null)
-  const metronomeSynthRef = useRef<Tone.Synth | null>(null)
-  const metronomeChannelRef = useRef<Tone.Channel | null>(null)
-  const metronomeLoopRef = useRef<Tone.Loop | null>(null)
+  const partSamplersRef = useRef<Record<string, ToneModule.Sampler>>({})
+  const partChannelsRef = useRef<Record<string, ToneModule.Channel>>({})
+  const masterChannelRef = useRef<ToneModule.Channel | null>(null)
+  const masterLimiterRef = useRef<ToneModule.Limiter | null>(null)
+  const metronomeSynthRef = useRef<ToneModule.Synth | null>(null)
+  const metronomeChannelRef = useRef<ToneModule.Channel | null>(null)
+  const metronomeLoopRef = useRef<ToneModule.Loop | null>(null)
   const isPlaying = useScoreStore((state) => state.isPlaying)
   const setIsPlaying = useScoreStore((state) => state.setIsPlaying)
   const setStoreVolume = useScoreStore((state) => state.setVolume)
-  const partRef = useRef<Tone.Part | null>(null)
+  const partRef = useRef<ToneModule.Part | null>(null)
   const onNoteStartRef = useRef(options.onNoteStart)
   const onPlaybackStartRef = useRef(options.onPlaybackStart)
   const onPlaybackStopRef = useRef(options.onPlaybackStop)
   const hasObservedPlaybackStateRef = useRef(false)
   const activePartIdsRef = useRef<Set<string>>(new Set())
   const measureStartTicksRef = useRef<Set<number>>(new Set())
-  const [loadedSampleSignature, setLoadedSampleSignature] = useState<
-    string | null
-  >(null)
+  const [loadedSamplerConfigs, setLoadedSamplerConfigs] = useState<Partial<
+    Record<SamplerId, SamplerConfig>
+  > | null>(null)
   const [mixerState, setMixerState] = useState<MixerState>({
     masterVolume: DEFAULT_VOLUME,
     metronomeVolume: DEFAULT_VOLUME,
@@ -207,7 +247,26 @@ export const useAudioPlayer = (
     onPlaybackStopRef.current = options.onPlaybackStop
   }, [options.onNoteStart, options.onPlaybackStart, options.onPlaybackStop])
 
+  const [toneReady, setToneReady] = useState(false)
+
+  // Tone.js の遅延ロード：parsedEvents が存在したら初めてロードする
+  useEffect(() => {
+    if (parsedEvents.length === 0) return
+    let cancelled = false
+    void getTone()
+      .then(() => {
+        if (!cancelled) setToneReady(true)
+      })
+      .catch((error: unknown) => {
+        console.error('Tone.js loading failed:', error)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [parsedEvents])
+
   const ticksToSeconds = useCallback((ticks: number) => {
+    const Tone = _toneModule!
     return Tone.Time(`${ticks}i`).toSeconds()
   }, [])
 
@@ -250,10 +309,14 @@ export const useAudioPlayer = (
     }))
   }, [parsedEvents])
 
-  const requiredSamplerConfigs = useMemo(
-    () => getRequiredSamplerConfigs(parsedEvents),
-    [parsedEvents]
-  )
+  const requiredSamplerConfigs = useMemo(() => {
+    if (!toneReady || !_toneModule || parsedEvents.length === 0) {
+      return EMPTY_SAMPLER_CONFIGS
+    }
+
+    return getRequiredSamplerConfigs(parsedEvents, _toneModule)
+  }, [parsedEvents, toneReady])
+
   const requiredSampleSignature = useMemo(
     () =>
       (Object.entries(requiredSamplerConfigs) as [SamplerId, SamplerConfig][])
@@ -288,6 +351,8 @@ export const useAudioPlayer = (
   }, [measureStartTicks])
 
   useEffect(() => {
+    if (!toneReady) return
+    const Tone = _toneModule!
     masterLimiterRef.current = new Tone.Limiter(
       MASTER_LIMITER_THRESHOLD_DB
     ).toDestination()
@@ -335,7 +400,7 @@ export const useAudioPlayer = (
       masterChannelRef.current = null
       masterLimiterRef.current = null
     }
-  }, [])
+  }, [toneReady])
 
   useEffect(() => {
     let isDisposed = false
@@ -349,15 +414,18 @@ export const useAudioPlayer = (
     if (configEntries.length === 0) return
 
     let loadedCount = 0
-    const sharedBuffers: Partial<Record<SamplerId, Tone.ToneAudioBuffers>> = {}
+    const sharedBuffers: Partial<
+      Record<SamplerId, ToneModule.ToneAudioBuffers>
+    > = {}
     const handleBuffersLoaded = () => {
       loadedCount += 1
       if (!isDisposed && loadedCount === configEntries.length) {
-        setLoadedSampleSignature(requiredSampleSignature)
+        setLoadedSamplerConfigs(requiredSamplerConfigs)
       }
     }
 
     configEntries.forEach(([samplerId, config]) => {
+      const Tone = _toneModule!
       sharedBuffers[samplerId] = new Tone.ToneAudioBuffers({
         urls: config.urls,
         baseUrl: config.baseUrl,
@@ -375,11 +443,11 @@ export const useAudioPlayer = (
 
   useEffect(() => {
     const masterChannel = masterChannelRef.current
-    if (!masterChannel || loadedSampleSignature !== requiredSampleSignature) {
+    if (!masterChannel || loadedSamplerConfigs !== requiredSamplerConfigs) {
       return
     }
 
-    const currentSamplers: Record<string, Tone.Sampler> = {}
+    const currentSamplers: Record<string, ToneModule.Sampler> = {}
     const configEntries = Object.entries(requiredSamplerConfigs) as [
       SamplerId,
       SamplerConfig,
@@ -400,15 +468,15 @@ export const useAudioPlayer = (
       Object.values(currentSamplers).forEach((sampler) => sampler.dispose())
       samplers.current = {}
     }
-  }, [loadedSampleSignature, requiredSampleSignature, requiredSamplerConfigs])
+  }, [loadedSamplerConfigs, requiredSamplerConfigs])
 
   useEffect(() => {
     const masterChannel = masterChannelRef.current
-    if (!masterChannel || loadedSampleSignature !== requiredSampleSignature) {
+    if (!masterChannel || loadedSamplerConfigs !== requiredSamplerConfigs) {
       return
     }
-    const channels: Record<string, Tone.Channel> = {}
-    const partSamplers: Record<string, Tone.Sampler> = {}
+    const channels: Record<string, ToneModule.Channel> = {}
+    const partSamplers: Record<string, ToneModule.Sampler> = {}
     const currentMixerState = mixerStateRef.current
     const hasSolo =
       currentMixerState.soloPartId !== null &&
@@ -418,6 +486,7 @@ export const useAudioPlayer = (
       const partState =
         currentMixerState.parts[part.id] ?? getDefaultPartState()
 
+      const Tone = _toneModule!
       channels[part.id] = new Tone.Channel({
         volume: mixerValueToDecibels(partState.volume, MAX_PART_BOOST_DB),
         mute:
@@ -451,10 +520,9 @@ export const useAudioPlayer = (
       partChannelsRef.current = {}
     }
   }, [
-    loadedSampleSignature,
+    loadedSamplerConfigs,
     partDescriptors,
     partSamplerDescriptors,
-    requiredSampleSignature,
     requiredSamplerConfigs,
   ])
 
@@ -496,12 +564,14 @@ export const useAudioPlayer = (
       partRef.current.dispose()
       partRef.current = null
     }
+    if (!toneReady || !_toneModule) return
 
     const partEvents = parsedEvents.map((event) => ({
       time: ticksToSeconds(event.time),
       event,
     }))
 
+    const Tone = _toneModule!
     partRef.current = new Tone.Part((time, value) => {
       const { event } = value
       if (event.isRest || event.isTieContinuation) return
@@ -529,10 +599,12 @@ export const useAudioPlayer = (
     return () => {
       partRef.current?.dispose()
     }
-  }, [parsedEvents, ticksToSeconds])
+  }, [parsedEvents, ticksToSeconds, toneReady])
 
   // isPlaying に応じて Transport の開始/停止を同期
   useEffect(() => {
+    if (!toneReady) return
+    const Tone = _toneModule!
     if (isPlaying) {
       const startTicks = Math.max(
         0,
@@ -555,9 +627,10 @@ export const useAudioPlayer = (
       }
     }
     hasObservedPlaybackStateRef.current = true
-  }, [isPlaying, ticksToSeconds])
+  }, [isPlaying, ticksToSeconds, toneReady])
 
   const play = useCallback(async () => {
+    const Tone = await getTone()
     await Tone.start()
     setIsPlaying(true)
   }, [setIsPlaying])
@@ -568,6 +641,8 @@ export const useAudioPlayer = (
 
   const playNote: PlayNoteFn = useCallback(
     (samplerId, playbackKey, durationBeats) => {
+      const Tone = _toneModule
+      if (!Tone) return
       const sampler = samplers.current[samplerId] ?? samplers.current.piano
       if (!sampler || !sampler.loaded) return
 
@@ -803,9 +878,11 @@ export type PlayNoteFn = (
 
 // React 型を使わず構造的に表現
 export const createPlayNote = (samplersRef: {
-  current: Record<string, Tone.Sampler> | undefined | null
+  current: Record<string, ToneModule.Sampler> | undefined | null
 }): PlayNoteFn => {
   return (samplerId, playbackKey, durationBeats) => {
+    const Tone = _toneModule
+    if (!Tone) return
     const sampler =
       samplersRef.current?.[samplerId] ?? samplersRef.current?.piano
     if (!sampler || !sampler.loaded) return

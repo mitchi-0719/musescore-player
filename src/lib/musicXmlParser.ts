@@ -1,5 +1,3 @@
-import * as Tone from 'tone'
-
 import {
   DRUM_SAMPLE_KEY_BY_LABEL,
   MIDI_UNPITCHED_TO_KEY,
@@ -357,7 +355,9 @@ const parseNoteData = (
   return null
 }
 
-export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
+export const parseMusicXmlForEvents = async (
+  musicXml: string
+): Promise<NoteEvent[]> => {
   const parser = new DOMParser()
   const doc = parser.parseFromString(musicXml, 'application/xml')
 
@@ -366,6 +366,7 @@ export const parseMusicXmlForEvents = (musicXml: string): NoteEvent[] => {
     return []
   }
 
+  const Tone = await import('tone')
   const tempo = getTempo(doc)
   Tone.getTransport().bpm.value = tempo
 

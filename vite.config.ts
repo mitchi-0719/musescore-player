@@ -15,17 +15,9 @@ export default defineConfig({
     }),
   ],
   build: {
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('webmscore')) return 'webmscore'
-            if (id.includes('tone')) return 'audio-engine'
-            return 'vendor'
-          }
-        },
-      },
-    },
-    chunkSizeWarningLimit: 1000,
+    // OSMD is loaded only after a score is selected. Its minified package is
+    // currently about 1.25 MB, so keep the warning narrowly above that known
+    // lazy chunk instead of masking future multi-megabyte regressions.
+    chunkSizeWarningLimit: 1300,
   },
 })
