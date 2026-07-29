@@ -236,6 +236,41 @@ export const ScorePreview = () => {
     [changeScoreZoom]
   )
 
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    let overlay: HTMLDivElement | null = null
+    let wasPlaying = useScoreStore.getState().isPlaying
+    const addOverlay = () => {
+      if (overlay || !container) return
+      overlay = document.createElement('div')
+      overlay.style.position = 'absolute'
+      overlay.style.inset = '0'
+      overlay.style.zIndex = '10'
+      overlay.style.touchAction = 'manipulation'
+      container.appendChild(overlay)
+    }
+    const removeOverlay = () => {
+      if (!overlay) return
+      overlay.remove()
+      overlay = null
+    }
+    if (wasPlaying) addOverlay()
+    const unsubscribe = useScoreStore.subscribe((state) => {
+      if (state.isPlaying === wasPlaying) return
+      wasPlaying = state.isPlaying
+      if (state.isPlaying) {
+        addOverlay()
+      } else {
+        removeOverlay()
+      }
+    })
+    return () => {
+      unsubscribe()
+      removeOverlay()
+    }
+  }, [containerRef])
+
   const isLoadingScore = Boolean((isLoading || isRendering) && !musicXml)
 
   return (
