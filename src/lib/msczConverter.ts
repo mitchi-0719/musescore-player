@@ -1,6 +1,3 @@
-import JSZip from 'jszip'
-import WebMscore from 'webmscore'
-
 interface MusicScoreExport {
   musicXml: string
   musicMxl: Uint8Array | null
@@ -129,6 +126,7 @@ const findMscxFile = async (fileBinary: Uint8Array): Promise<string | null> => {
   }
 
   try {
+    const JSZip = (await import('jszip')).default
     const zip = await JSZip.loadAsync(fileBinary)
     const mscxEntry = Object.values(zip.files).find(
       (entry) => !entry.dir && entry.name.toLowerCase().endsWith('.mscx')
@@ -241,6 +239,7 @@ export const convertMsczToMusicXml = async (
   const webMscoreBinary = fileBinary.slice()
   const msczArchiveBinary = fileBinary.slice()
 
+  const WebMscore = (await import('webmscore')).default
   const score = await WebMscore.load('mscz', webMscoreBinary, [], true)
 
   const rawMusicXml = await score.saveXml()

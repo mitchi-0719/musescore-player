@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { Cursor } from 'opensheetmusicdisplay'
 import { useShallow } from 'zustand/shallow'
@@ -6,7 +6,7 @@ import { useShallow } from 'zustand/shallow'
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
 import { useNoteInteraction } from '../hooks/useNoteInteraction'
 import { DEFAULT_SCORE_ZOOM, useOSMD } from '../hooks/useOSMD'
-import { parseMusicXmlForEvents } from '../lib/musicXmlParser'
+import { type NoteEvent, parseMusicXmlForEvents } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
 import { ControlModal } from './controlModal/ControlModal'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
@@ -18,6 +18,12 @@ const MIN_CURSOR_WIDTH_PX = 4
 const SCORE_ZOOM_STEP_PERCENTAGE = 15
 const MIN_SCORE_ZOOM_PERCENTAGE = 25
 const MAX_SCORE_ZOOM_PERCENTAGE = 250
+const EMPTY_NOTE_EVENTS: NoteEvent[] = []
+
+type ParsedEventsState = {
+  musicXml: string
+  events: NoteEvent[]
+}
 
 const getCursorTicks = (cursor: Cursor): number | null => {
   try {
@@ -80,9 +86,33 @@ export const ScorePreview = () => {
     }
   }, [])
 
-  const parsedEvents = useMemo(() => {
-    if (!musicXml) return []
-    return parseMusicXmlForEvents(musicXml)
+  const [parsedEventsState, setParsedEventsState] =
+    useState<ParsedEventsState | null>(null)
+  const parsedEvents =
+    musicXml && parsedEventsState?.musicXml === musicXml
+      ? parsedEventsState.events
+      : EMPTY_NOTE_EVENTS
+
+  useEffect(() => {
+    if (!musicXml) return
+
+    let cancelled = false
+    void parseMusicXmlForEvents(musicXml)
+      .then((events) => {
+        if (!cancelled) {
+          setParsedEventsState({ musicXml, events })
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('MusicXML event parsing failed:', error)
+        if (!cancelled) {
+          setParsedEventsState({ musicXml, events: EMPTY_NOTE_EVENTS })
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [musicXml])
 
   const followPlaybackCursor = useCallback(

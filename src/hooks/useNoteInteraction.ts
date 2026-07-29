@@ -1,6 +1,6 @@
 import { type RefObject, useCallback, useMemo, useRef } from 'react'
 
-import { OpenSheetMusicDisplay, PointF2D } from 'opensheetmusicdisplay'
+import type { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 
 import type { NoteEvent } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
@@ -109,7 +109,7 @@ export const useNoteInteraction = (
 
   // ノート検索と再生のコアロジック（pointerup から呼ばれる）
   const processNoteClick = useCallback(
-    (clientX: number, clientY: number) => {
+    async (clientX: number, clientY: number) => {
       if (!containerRef.current || !osmdRef.current) return
 
       const osmd = osmdRef.current
@@ -127,6 +127,9 @@ export const useNoteInteraction = (
 
       const osmdX = (clientX - svgRect.left) / (10 * osmd.zoom)
       const osmdY = (clientY - svgRect.top) / (10 * osmd.zoom)
+
+      const { PointF2D } = await import('opensheetmusicdisplay')
+      if (osmdRef.current !== osmd) return
 
       const clickPoint = new PointF2D(osmdX, osmdY)
       const maxDistance = new PointF2D(3, 3)
@@ -332,7 +335,11 @@ export const useNoteInteraction = (
       }
 
       // pointerdown 時の座標を使ってノートを検索・再生
-      processNoteClick(downState.clientX, downState.clientY)
+      void processNoteClick(downState.clientX, downState.clientY).catch(
+        (error: unknown) => {
+          console.error('Note interaction failed:', error)
+        }
+      )
     },
     [processNoteClick]
   )
