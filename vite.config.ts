@@ -1,18 +1,17 @@
 import babel from '@rolldown/plugin-babel'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
-import { nodePolyfills } from 'vite-plugin-node-polyfills'
+
+import { webMscoreLocalAssets } from './config/vitePlugins'
 
 export default defineConfig({
+  optimizeDeps: {
+    exclude: ['webmscore'],
+  },
   plugins: [
+    webMscoreLocalAssets(),
     react(),
     babel({ presets: [reactCompilerPreset()] }),
-    nodePolyfills({
-      exclude: ['vm'],
-      globals: {
-        Buffer: true,
-      },
-    }),
   ],
   build: {
     // OSMD is loaded only after a score is selected. Its minified package is
