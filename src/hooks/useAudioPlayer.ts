@@ -4,7 +4,7 @@ import * as Tone from 'tone'
 
 import { DRUM_MAP } from '../constants/drum'
 import { PIANO_MAP } from '../constants/piano'
-import type { NoteEvent } from '../lib/musicXmlParser'
+import type { NoteEvent, SamplerId } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
 
 type AudioPlayerOptions = {
@@ -56,6 +56,19 @@ type MixerState = {
   parts: Record<string, PartMixerState>
 }
 
+type SamplerConfig = {
+  urls: Record<string, string>
+  baseUrl: string
+}
+
+const SAMPLER_CONFIGS: Record<SamplerId, SamplerConfig> = {
+  piano: { urls: PIANO_MAP, baseUrl: '/sounds/piano/' },
+  drum: { urls: DRUM_MAP, baseUrl: '/sounds/drums/' },
+  clap: { urls: { C4: 'Clap.wav' }, baseUrl: '/sounds/clap/' },
+}
+const PIANO_SAMPLE_KEY_BY_MIDI = new Map<number, string>(
+  Object.keys(PIANO_MAP).map((key) => [Tone.Frequency(key).toMidi(), key])
+)
 const DEFAULT_VOLUME = 1
 const MAX_VOLUME = 2
 const TICKS_PER_QUARTER = 192
@@ -87,12 +100,73 @@ const getDefaultPartState = (): PartMixerState => ({
   volume: DEFAULT_VOLUME,
   isMuted: false,
 })
+const getClosestPianoSampleKey = (midi: number) => {
+  for (let interval = 0; interval < 96; interval += 1) {
+    const upperKey = PIANO_SAMPLE_KEY_BY_MIDI.get(midi + interval)
+    if (upperKey) return upperKey
+
+    const lowerKey = PIANO_SAMPLE_KEY_BY_MIDI.get(midi - interval)
+    if (lowerKey) return lowerKey
+  }
+
+  return 'C4'
+}
+const getRequiredSamplerConfigs = (
+  parsedEvents: NoteEvent[]
+): Partial<Record<SamplerId, SamplerConfig>> => {
+  const requiredKeys: Record<SamplerId, Set<string>> = {
+    piano: new Set(),
+    drum: new Set(),
+    clap: new Set(),
+  }
+
+  parsedEvents.forEach((event) => {
+    if (event.isRest) return
+
+    if (event.samplerId === 'piano') {
+      requiredKeys.piano.add(
+        getClosestPianoSampleKey(Tone.Frequency(event.playbackKey).toMidi())
+      )
+      return
+    }
+
+    requiredKeys[event.samplerId].add(event.playbackKey)
+  })
+
+  return Object.fromEntries(
+    (Object.keys(requiredKeys) as SamplerId[]).flatMap((samplerId) => {
+      const keys = requiredKeys[samplerId]
+      if (keys.size === 0) return []
+
+      const config = SAMPLER_CONFIGS[samplerId]
+      const urls = Object.fromEntries(
+        Array.from(keys, (key) => [key, config.urls[key]]).filter(
+          (entry): entry is [string, string] => Boolean(entry[1])
+        )
+      )
+
+      return Object.keys(urls).length > 0
+        ? [[samplerId, { urls, baseUrl: config.baseUrl }]]
+        : []
+    })
+  )
+}
+const createSamplerFromSharedBuffers = (
+  buffers: Tone.ToneAudioBuffers,
+  sampleKeys: string[]
+) =>
+  new Tone.Sampler({
+    urls: Object.fromEntries(sampleKeys.map((key) => [key, buffers.get(key)])),
+  })
 
 export const useAudioPlayer = (
   parsedEvents: NoteEvent[],
   options: AudioPlayerOptions = {}
 ) => {
   const samplers = useRef<Record<string, Tone.Sampler>>({})
+  const sharedSampleBuffersRef = useRef<
+    Partial<Record<SamplerId, Tone.ToneAudioBuffers>>
+  >({})
   const partSamplersRef = useRef<Record<string, Tone.Sampler>>({})
   const partChannelsRef = useRef<Record<string, Tone.Channel>>({})
   const masterChannelRef = useRef<Tone.Channel | null>(null)
@@ -110,6 +184,9 @@ export const useAudioPlayer = (
   const hasObservedPlaybackStateRef = useRef(false)
   const activePartIdsRef = useRef<Set<string>>(new Set())
   const measureStartTicksRef = useRef<Set<number>>(new Set())
+  const [loadedSampleSignature, setLoadedSampleSignature] = useState<
+    string | null
+  >(null)
   const [mixerState, setMixerState] = useState<MixerState>({
     masterVolume: DEFAULT_VOLUME,
     metronomeVolume: DEFAULT_VOLUME,
@@ -173,6 +250,22 @@ export const useAudioPlayer = (
     }))
   }, [parsedEvents])
 
+  const requiredSamplerConfigs = useMemo(
+    () => getRequiredSamplerConfigs(parsedEvents),
+    [parsedEvents]
+  )
+  const requiredSampleSignature = useMemo(
+    () =>
+      (Object.entries(requiredSamplerConfigs) as [SamplerId, SamplerConfig][])
+        .map(
+          ([samplerId, config]) =>
+            `${samplerId}:${Object.keys(config.urls).sort().join(',')}`
+        )
+        .sort()
+        .join('|'),
+    [requiredSamplerConfigs]
+  )
+
   const measureStartTicks = useMemo(() => {
     const startsByMeasure = new Map<number, number>()
 
@@ -195,16 +288,6 @@ export const useAudioPlayer = (
   }, [measureStartTicks])
 
   useEffect(() => {
-    const instrumentConfigs = [
-      { id: 'piano', urls: PIANO_MAP, baseUrl: '/sounds/piano/' },
-      { id: 'drum', urls: DRUM_MAP, baseUrl: '/sounds/drums/' },
-      {
-        id: 'clap',
-        urls: { C4: 'Clap.wav' },
-        baseUrl: '/sounds/clap/',
-      },
-    ]
-
     masterLimiterRef.current = new Tone.Limiter(
       MASTER_LIMITER_THRESHOLD_DB
     ).toDestination()
@@ -242,20 +325,10 @@ export const useAudioPlayer = (
       )
     }, '4n')
 
-    instrumentConfigs.forEach((config) => {
-      samplers.current[config.id] = new Tone.Sampler({
-        urls: config.urls,
-        baseUrl: config.baseUrl,
-      }).connect(masterChannelRef.current!)
-    })
-
-    const currentSamplers = samplers.current
-
     return () => {
       metronomeLoopRef.current?.dispose()
       metronomeSynthRef.current?.dispose()
       metronomeChannelRef.current?.dispose()
-      Object.values(currentSamplers).forEach((s) => s.dispose())
       masterChannelRef.current?.dispose()
       masterLimiterRef.current?.dispose()
       metronomeChannelRef.current = null
@@ -265,13 +338,74 @@ export const useAudioPlayer = (
   }, [])
 
   useEffect(() => {
-    const masterChannel = masterChannelRef.current
-    if (!masterChannel) return
+    let isDisposed = false
+    const configEntries = Object.entries(requiredSamplerConfigs) as [
+      SamplerId,
+      SamplerConfig,
+    ][]
 
-    const instrumentConfigs = {
-      piano: { urls: PIANO_MAP, baseUrl: '/sounds/piano/' },
-      drum: { urls: DRUM_MAP, baseUrl: '/sounds/drums/' },
-      clap: { urls: { C4: 'Clap.wav' }, baseUrl: '/sounds/clap/' },
+    sharedSampleBuffersRef.current = {}
+
+    if (configEntries.length === 0) return
+
+    let loadedCount = 0
+    const sharedBuffers: Partial<Record<SamplerId, Tone.ToneAudioBuffers>> = {}
+    const handleBuffersLoaded = () => {
+      loadedCount += 1
+      if (!isDisposed && loadedCount === configEntries.length) {
+        setLoadedSampleSignature(requiredSampleSignature)
+      }
+    }
+
+    configEntries.forEach(([samplerId, config]) => {
+      sharedBuffers[samplerId] = new Tone.ToneAudioBuffers({
+        urls: config.urls,
+        baseUrl: config.baseUrl,
+        onload: handleBuffersLoaded,
+      })
+    })
+    sharedSampleBuffersRef.current = sharedBuffers
+
+    return () => {
+      isDisposed = true
+      Object.values(sharedBuffers).forEach((buffers) => buffers?.dispose())
+      sharedSampleBuffersRef.current = {}
+    }
+  }, [requiredSampleSignature, requiredSamplerConfigs])
+
+  useEffect(() => {
+    const masterChannel = masterChannelRef.current
+    if (!masterChannel || loadedSampleSignature !== requiredSampleSignature) {
+      return
+    }
+
+    const currentSamplers: Record<string, Tone.Sampler> = {}
+    const configEntries = Object.entries(requiredSamplerConfigs) as [
+      SamplerId,
+      SamplerConfig,
+    ][]
+
+    configEntries.forEach(([samplerId, config]) => {
+      const buffers = sharedSampleBuffersRef.current[samplerId]
+      if (!buffers) return
+
+      currentSamplers[samplerId] = createSamplerFromSharedBuffers(
+        buffers,
+        Object.keys(config.urls)
+      ).connect(masterChannel)
+    })
+    samplers.current = currentSamplers
+
+    return () => {
+      Object.values(currentSamplers).forEach((sampler) => sampler.dispose())
+      samplers.current = {}
+    }
+  }, [loadedSampleSignature, requiredSampleSignature, requiredSamplerConfigs])
+
+  useEffect(() => {
+    const masterChannel = masterChannelRef.current
+    if (!masterChannel || loadedSampleSignature !== requiredSampleSignature) {
+      return
     }
     const channels: Record<string, Tone.Channel> = {}
     const partSamplers: Record<string, Tone.Sampler> = {}
@@ -297,11 +431,14 @@ export const useAudioPlayer = (
       const channel = channels[partId]
       if (!channel) return
 
-      const config = instrumentConfigs[samplerId]
-      partSamplers[key] = new Tone.Sampler({
-        urls: config.urls,
-        baseUrl: config.baseUrl,
-      }).connect(channel)
+      const buffers = sharedSampleBuffersRef.current[samplerId]
+      const config = requiredSamplerConfigs[samplerId]
+      if (!buffers || !config) return
+
+      partSamplers[key] = createSamplerFromSharedBuffers(
+        buffers,
+        Object.keys(config.urls)
+      ).connect(channel)
     })
 
     partChannelsRef.current = channels
@@ -313,7 +450,13 @@ export const useAudioPlayer = (
       partSamplersRef.current = {}
       partChannelsRef.current = {}
     }
-  }, [partDescriptors, partSamplerDescriptors])
+  }, [
+    loadedSampleSignature,
+    partDescriptors,
+    partSamplerDescriptors,
+    requiredSampleSignature,
+    requiredSamplerConfigs,
+  ])
 
   useEffect(() => {
     const hasSolo =
