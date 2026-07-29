@@ -53,6 +53,7 @@ const syncCursorImageSize = (cursorElement?: HTMLImageElement | null) => {
 export const ScorePreview = () => {
   console.log('[ScorePreview] rendering...')
   const lastCursorEventTimeRef = useRef<number | null>(null)
+  const lastCursorTopRef = useRef<string | null>(null)
   const scoreZoomPercentageRef = useRef(100)
   const zoomRenderFrameRef = useRef<number | null>(null)
   const [scoreZoomPercentage, setScoreZoomPercentage] = useState(100)
@@ -83,6 +84,27 @@ export const ScorePreview = () => {
     if (!musicXml) return []
     return parseMusicXmlForEvents(musicXml)
   }, [musicXml])
+
+  const followPlaybackCursor = useCallback(
+    (cursorElement?: HTMLImageElement | null) => {
+      if (!cursorElement) return
+
+      const cursorTop = cursorElement.style.top
+      if (!cursorTop || cursorTop === lastCursorTopRef.current) return
+
+      lastCursorTopRef.current = cursorTop
+      const headerHeight =
+        document.querySelector<HTMLElement>('[data-app-header]')
+          ?.offsetHeight ?? 0
+      cursorElement.style.scrollMarginTop = `${headerHeight + 60}px`
+      cursorElement.scrollIntoView({
+        block: 'start',
+        inline: 'nearest',
+        behavior: 'auto',
+      })
+    },
+    []
+  )
 
   const syncPlaybackCursor = useCallback(
     (eventTime: number) => {
@@ -120,9 +142,10 @@ export const ScorePreview = () => {
       }
 
       syncCursorImageSize(cursor.cursorElement)
+      followPlaybackCursor(cursor.cursorElement)
       lastCursorEventTimeRef.current = targetTicks
     },
-    [osmdRef]
+    [followPlaybackCursor, osmdRef]
   )
 
   const startPlaybackCursor = useCallback(
@@ -131,6 +154,7 @@ export const ScorePreview = () => {
       if (!cursor) return
 
       lastCursorEventTimeRef.current = null
+      lastCursorTopRef.current = null
 
       if (startTicks > 0) {
         syncPlaybackCursor(startTicks)
@@ -140,8 +164,9 @@ export const ScorePreview = () => {
       cursor.reset()
       cursor.show()
       syncCursorImageSize(cursor.cursorElement)
+      followPlaybackCursor(cursor.cursorElement)
     },
-    [osmdRef, syncPlaybackCursor]
+    [followPlaybackCursor, osmdRef, syncPlaybackCursor]
   )
 
   const { play, stop, playNote, mixerControls } = useAudioPlayer(parsedEvents, {
@@ -149,6 +174,7 @@ export const ScorePreview = () => {
     onPlaybackStart: startPlaybackCursor,
     onPlaybackStop: () => {
       lastCursorEventTimeRef.current = null
+      lastCursorTopRef.current = null
       osmdRef.current?.cursor?.hide()
     },
   })
