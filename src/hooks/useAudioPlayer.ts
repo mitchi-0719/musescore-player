@@ -585,9 +585,12 @@ export const useAudioPlayer = (
       const velocity = getSamplerVolumeMultiplier(event.samplerId)
 
       if (sampler?.loaded) {
+        // MuseScore の既定値（staccatoGateTime = 50）に合わせて、
+        // 発音時間だけを記譜音価の 50% にする。次の音の開始時刻は変えない。
+        const gateTime = event.isStaccato ? 0.5 : 1
         sampler.triggerAttackRelease(
           event.playbackKey,
-          ticksToSeconds(event.duration),
+          ticksToSeconds(event.duration * gateTime),
           time,
           velocity
         )
