@@ -6,7 +6,11 @@ import { useShallow } from 'zustand/shallow'
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
 import { useNoteInteraction } from '../hooks/useNoteInteraction'
 import { DEFAULT_SCORE_ZOOM, useOSMD } from '../hooks/useOSMD'
-import { type NoteEvent, parseMusicXmlForEvents } from '../lib/musicXmlParser'
+import {
+  type NoteEvent,
+  type TempoChange,
+  parseMusicXmlForEvents,
+} from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
 import { ControlModal } from './controlModal/ControlModal'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
@@ -23,6 +27,7 @@ const EMPTY_NOTE_EVENTS: NoteEvent[] = []
 type ParsedEventsState = {
   musicXml: string
   events: NoteEvent[]
+  tempoChanges: TempoChange[]
 }
 
 const getCursorTicks = (cursor: Cursor): number | null => {
@@ -92,21 +97,33 @@ export const ScorePreview = () => {
     musicXml && parsedEventsState?.musicXml === musicXml
       ? parsedEventsState.events
       : EMPTY_NOTE_EVENTS
+  const tempoChanges =
+    musicXml && parsedEventsState?.musicXml === musicXml
+      ? parsedEventsState.tempoChanges
+      : []
 
   useEffect(() => {
     if (!musicXml) return
 
     let cancelled = false
     void parseMusicXmlForEvents(musicXml)
-      .then((events) => {
+      .then(({ events, tempoChanges: parsedTempoChanges }) => {
         if (!cancelled) {
-          setParsedEventsState({ musicXml, events })
+          setParsedEventsState({
+            musicXml,
+            events,
+            tempoChanges: parsedTempoChanges,
+          })
         }
       })
       .catch((error: unknown) => {
         console.error('MusicXML event parsing failed:', error)
         if (!cancelled) {
-          setParsedEventsState({ musicXml, events: EMPTY_NOTE_EVENTS })
+          setParsedEventsState({
+            musicXml,
+            events: EMPTY_NOTE_EVENTS,
+            tempoChanges: [],
+          })
         }
       })
 
@@ -200,6 +217,7 @@ export const ScorePreview = () => {
   )
 
   const { play, stop, playNote, mixerControls } = useAudioPlayer(parsedEvents, {
+    tempoChanges,
     onNoteStart: (event) => syncPlaybackCursor(event.time),
     onPlaybackStart: startPlaybackCursor,
     onPlaybackStop: () => {

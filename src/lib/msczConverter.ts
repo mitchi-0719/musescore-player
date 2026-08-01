@@ -24,6 +24,8 @@ type RestoreHarmonyResult = {
 }
 
 const HARMONY_TAG_PATTERN = /<harmony\b[\s\S]*?<\/harmony>/g
+const DIRECTION_TAG_PATTERN = /<direction\b[\s\S]*?<\/direction>/g
+const DIRECTION_TYPE_TAG_PATTERN = /<direction-type\b[\s\S]*?<\/direction-type>/
 
 const STEP_BY_INDEX = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
 const NATURAL_TPC_BY_STEP: Record<string, number> = {
@@ -93,6 +95,38 @@ const escapeXml = (value: string): string =>
     .replaceAll('"', '&quot;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
+
+const normalizeTextTempoDirections = (musicXml: string): string =>
+  musicXml.replace(DIRECTION_TAG_PATTERN, (direction) => {
+    if (
+      /<metronome\b/.test(direction) ||
+      !/<sound\b[^>]*tempo=/.test(direction)
+    ) {
+      return direction
+    }
+
+    // MuseScore がテンポ記号を Leland Text の私用領域グリフと words に
+    // 分けて出力する場合がある。OSMD ではそのグリフを描画できないため、
+    // 表示されている「= 数値」を標準 MusicXML の metronome に戻す。
+    const directionText = direction
+      .replace(/<[^>]+>/g, '')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&#160;', ' ')
+    const tempoMatch = directionText.match(/=\s*(\d+(?:\.\d+)?)/)
+    if (!tempoMatch || !DIRECTION_TYPE_TAG_PATTERN.test(direction)) {
+      return direction
+    }
+
+    return direction.replace(
+      DIRECTION_TYPE_TAG_PATTERN,
+      `<direction-type>
+          <metronome parentheses="no">
+            <beat-unit>quarter</beat-unit>
+            <per-minute>${tempoMatch[1]}</per-minute>
+            </metronome>
+          </direction-type>`
+    )
+  })
 
 const tpcToMusicXmlPitch = (value: string): MusicXmlPitch | null => {
   if (!value.trim()) return null
@@ -247,7 +281,7 @@ export const convertMsczToMusicXml = async (
     rawMusicXml,
     msczArchiveBinary
   )
-  const musicXml = restoreResult.musicXml
+  const musicXml = normalizeTextTempoDirections(restoreResult.musicXml)
 
   let musicMxl: Uint8Array | null = null
   try {

@@ -5,6 +5,11 @@ import {
 
 export type SamplerId = 'piano' | 'drum' | 'clap'
 
+export type TempoChange = {
+  time: number
+  bpm: number
+}
+
 export type NoteEvent = {
   partId: string
   partName: string | null
@@ -197,6 +202,69 @@ const getDurationTicks = (note: Element, divisions: number): number => {
   return Math.round((duration / divisions) * TICKS_PER_QUARTER)
 }
 
+const getTempoChanges = (
+  doc: Document,
+  measureStartTicks: number[],
+  fallbackDivisions: number
+): TempoChange[] => {
+  const firstPart = doc.querySelector('part')
+  if (!firstPart) return [{ time: 0, bpm: 120 }]
+
+  const changes = new Map<number, number>()
+  let currentDivisions = fallbackDivisions
+
+  firstPart.querySelectorAll(':scope > measure').forEach((measure, index) => {
+    currentDivisions = getMeasureDivisions(measure, currentDivisions)
+    const measureStart = measureStartTicks[index] ?? 0
+    let cursor = measureStart
+
+    Array.from(measure.children).forEach((child) => {
+      const tag = child.tagName.toLowerCase()
+      if (tag === 'backup' || tag === 'forward') {
+        const rawDuration = Number(
+          child.querySelector('duration')?.textContent || '0'
+        )
+        const ticks = Number.isFinite(rawDuration)
+          ? Math.round((rawDuration / currentDivisions) * TICKS_PER_QUARTER)
+          : 0
+        cursor += tag === 'backup' ? -ticks : ticks
+        cursor = Math.max(measureStart, cursor)
+        return
+      }
+
+      if (tag === 'note') {
+        if (!child.querySelector('chord')) {
+          cursor += getDurationTicks(child, currentDivisions)
+        }
+        return
+      }
+
+      if (tag !== 'direction' && tag !== 'sound') return
+
+      const sound = tag === 'sound' ? child : child.querySelector('sound')
+      const rawTempo = sound?.getAttribute('tempo')
+      const metronomeTempo = child.querySelector(
+        'direction-type > metronome > per-minute'
+      )?.textContent
+      const bpm = Number(rawTempo || metronomeTempo || '')
+      if (!Number.isFinite(bpm) || bpm <= 0) return
+
+      const rawOffset = Number(
+        child.querySelector(':scope > offset')?.textContent || '0'
+      )
+      const offsetTicks = Number.isFinite(rawOffset)
+        ? Math.round((rawOffset / currentDivisions) * TICKS_PER_QUARTER)
+        : 0
+      changes.set(Math.max(0, cursor + offsetTicks), bpm)
+    })
+  })
+
+  if (!changes.has(0)) changes.set(0, getTempo(doc))
+  return Array.from(changes, ([time, bpm]) => ({ time, bpm })).sort(
+    (left, right) => left.time - right.time
+  )
+}
+
 const hasTieStart = (note: Element): boolean =>
   note.querySelector(
     ':scope > tie[type="start"], :scope > notations > tied[type="start"]'
@@ -361,18 +429,14 @@ const parseNoteData = (
 
 export const parseMusicXmlForEvents = async (
   musicXml: string
-): Promise<NoteEvent[]> => {
+): Promise<{ events: NoteEvent[]; tempoChanges: TempoChange[] }> => {
   const parser = new DOMParser()
   const doc = parser.parseFromString(musicXml, 'application/xml')
 
   if (doc.querySelector('parsererror')) {
     console.warn('MusicXML の解析に失敗しました')
-    return []
+    return { events: [], tempoChanges: [] }
   }
-
-  const Tone = await import('tone')
-  const tempo = getTempo(doc)
-  Tone.getTransport().bpm.value = tempo
 
   const events: NoteEvent[] = []
   const fallbackDivisions = getInitialDivisions(doc)
@@ -734,10 +798,15 @@ export const parseMusicXmlForEvents = async (
     })
   })
 
-  return events.sort(
+  const sortedEvents = events.sort(
     (left, right) =>
       left.time - right.time ||
       left.partId.localeCompare(right.partId) ||
       left.voice.localeCompare(right.voice)
   )
+
+  return {
+    events: sortedEvents,
+    tempoChanges: getTempoChanges(doc, measureStartTicks, fallbackDivisions),
+  }
 }

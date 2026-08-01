@@ -4,10 +4,11 @@ import type * as ToneModule from 'tone'
 
 import { DRUM_MAP } from '../constants/drum'
 import { PIANO_MAP } from '../constants/piano'
-import type { NoteEvent, SamplerId } from '../lib/musicXmlParser'
+import type { NoteEvent, SamplerId, TempoChange } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
 
 type AudioPlayerOptions = {
+  tempoChanges?: TempoChange[]
   onNoteStart?: (event: NoteEvent) => void
   onPlaybackStart?: (startTicks: number) => void
   onPlaybackStop?: () => void
@@ -218,6 +219,7 @@ export const useAudioPlayer = (
   const setIsPlaying = useScoreStore((state) => state.setIsPlaying)
   const setStoreVolume = useScoreStore((state) => state.setVolume)
   const partRef = useRef<ToneModule.Part | null>(null)
+  const tempoScheduleIdsRef = useRef<number[]>([])
   const onNoteStartRef = useRef(options.onNoteStart)
   const onPlaybackStartRef = useRef(options.onPlaybackStart)
   const onPlaybackStopRef = useRef(options.onPlaybackStop)
@@ -264,11 +266,6 @@ export const useAudioPlayer = (
       cancelled = true
     }
   }, [parsedEvents])
-
-  const ticksToSeconds = useCallback((ticks: number) => {
-    const Tone = _toneModule!
-    return Tone.Time(`${ticks}i`).toSeconds()
-  }, [])
 
   const partDescriptors = useMemo(() => {
     const parts = new Map<string, string>()
@@ -567,11 +564,24 @@ export const useAudioPlayer = (
     if (!toneReady || !_toneModule) return
 
     const partEvents = parsedEvents.map((event) => ({
-      time: ticksToSeconds(event.time),
+      time: `${event.time}i`,
       event,
     }))
 
     const Tone = _toneModule!
+    const transport = Tone.getTransport()
+    tempoScheduleIdsRef.current.forEach((id) => transport.clear(id))
+    tempoScheduleIdsRef.current = []
+
+    const tempoChanges = options.tempoChanges ?? []
+    transport.bpm.value = tempoChanges[0]?.bpm ?? 120
+    tempoChanges.slice(1).forEach((change) => {
+      const id = transport.schedule((time) => {
+        transport.bpm.setValueAtTime(change.bpm, time)
+      }, `${change.time}i`)
+      tempoScheduleIdsRef.current.push(id)
+    })
+
     partRef.current = new Tone.Part((time, value) => {
       const { event } = value
       if (event.isRest || event.isTieContinuation) return
@@ -590,7 +600,7 @@ export const useAudioPlayer = (
         const gateTime = event.isStaccato ? 0.5 : 1
         sampler.triggerAttackRelease(
           event.playbackKey,
-          ticksToSeconds(event.duration * gateTime),
+          `${event.duration * gateTime}i`,
           time,
           velocity
         )
@@ -601,8 +611,10 @@ export const useAudioPlayer = (
 
     return () => {
       partRef.current?.dispose()
+      tempoScheduleIdsRef.current.forEach((id) => transport.clear(id))
+      tempoScheduleIdsRef.current = []
     }
-  }, [parsedEvents, ticksToSeconds, toneReady])
+  }, [options.tempoChanges, parsedEvents, toneReady])
 
   // isPlaying に応じて Transport の開始/停止を同期
   useEffect(() => {
@@ -613,11 +625,14 @@ export const useAudioPlayer = (
         0,
         useScoreStore.getState().highlightedNoteTime ?? 0
       )
-      const startSeconds = ticksToSeconds(startTicks)
-
+      const activeTempo = (options.tempoChanges ?? []).reduce(
+        (bpm, change) => (change.time <= startTicks ? change.bpm : bpm),
+        options.tempoChanges?.[0]?.bpm ?? 120
+      )
+      Tone.getTransport().bpm.value = activeTempo
       onPlaybackStartRef.current?.(startTicks)
       metronomeLoopRef.current?.start(0)
-      Tone.getTransport().start(undefined, startSeconds)
+      Tone.getTransport().start(undefined, `${startTicks}i`)
     } else {
       Tone.getDraw().cancel()
       Tone.getTransport().stop()
@@ -630,7 +645,7 @@ export const useAudioPlayer = (
       }
     }
     hasObservedPlaybackStateRef.current = true
-  }, [isPlaying, ticksToSeconds, toneReady])
+  }, [isPlaying, options.tempoChanges, toneReady])
 
   const play = useCallback(async () => {
     const Tone = await getTone()
