@@ -20,6 +20,7 @@ export type NoteEvent = {
   measureNumber: number
   isRest: boolean
   isTieContinuation: boolean
+  isStaccato: boolean
   displayPitch: string | null
 }
 
@@ -205,6 +206,9 @@ const hasTieStop = (note: Element): boolean =>
   note.querySelector(
     ':scope > tie[type="stop"], :scope > notations > tied[type="stop"]'
   ) !== null
+
+const hasStaccato = (note: Element): boolean =>
+  note.querySelector(':scope > notations > articulations > staccato') !== null
 
 const getInstrumentId = (note: Element): string | null =>
   note.querySelector('instrument')?.getAttribute('id') || null
@@ -520,6 +524,7 @@ export const parseMusicXmlForEvents = async (
         const duration = getDurationTicks(note, currentDivisions)
         const isChord = note.querySelector('chord') !== null
         const isRest = note.querySelector('rest') !== null
+        const isStaccato = hasStaccato(note)
 
         const currentTime = voiceTicks.get(voice) ?? startTicks
         const baseTime = Math.max(currentTime, startTicks)
@@ -544,6 +549,7 @@ export const parseMusicXmlForEvents = async (
             measureNumber,
             isRest: true,
             isTieContinuation: false,
+            isStaccato: false,
             displayPitch: null,
           })
           if (!isChord) {
@@ -587,6 +593,7 @@ export const parseMusicXmlForEvents = async (
             measureNumber,
             isRest: false,
             isTieContinuation: true,
+            isStaccato,
             displayPitch: pendingTie.displayPitch,
           })
 
@@ -620,6 +627,7 @@ export const parseMusicXmlForEvents = async (
             measureNumber,
             isRest: false,
             isTieContinuation: false,
+            isStaccato,
             displayPitch: parsedNote.displayPitch,
           }
           events.push(event)
@@ -664,6 +672,7 @@ export const parseMusicXmlForEvents = async (
             measureNumber,
             isRest: false,
             isTieContinuation: false,
+            isStaccato,
             displayPitch: parsedNote.displayPitch,
           }
           events.push(event)
@@ -707,6 +716,7 @@ export const parseMusicXmlForEvents = async (
           measureNumber,
           isRest: false,
           isTieContinuation: false,
+          isStaccato,
           displayPitch: parsedNote.displayPitch,
         })
 
