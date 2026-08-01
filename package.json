@@ -20,6 +20,7 @@
     "osmd-audio-player": "^0.7.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "react-router-dom": "^7.18.2",
     "react-use": "^17.6.0",
     "tone": "^15.1.22",
     "webmscore": "^1.2.1",

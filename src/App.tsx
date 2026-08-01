@@ -1,15 +1,15 @@
-import { FileUploader } from './components/FileUploader'
-import { ScorePreview } from './components/ScorePreview'
-import { Header } from './components/layout/Header'
+import { Route, Routes } from 'react-router-dom'
+
+import { LandingPage } from './pages/LandingPage'
+import { NotFoundPage } from './pages/NotFoundPage'
+import { PlayerPage } from './pages/PlayerPage'
 
 export const App = () => {
   return (
-    <div className="flex min-h-screen flex-col bg-linear-to-br from-blue-50 to-indigo-100">
-      <Header />
-      <main className="flex flex-col items-center justify-center">
-        <ScorePreview />
-        <FileUploader />
-      </main>
-    </div>
+    <Routes>
+      <Route path="/" element={<PlayerPage />} />
+      <Route path="/lp" element={<LandingPage />} />
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
   )
 }

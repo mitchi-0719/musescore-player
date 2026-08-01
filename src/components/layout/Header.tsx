@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 export const Header = () => {
   return (
     <header
@@ -9,9 +11,9 @@ export const Header = () => {
         <nav>
           <ul className="flex space-x-4">
             <li>
-              <a href="/" className="hover:text-blue-300">
+              <Link to="/" className="hover:text-blue-300">
                 Home
-              </a>
+              </Link>
             </li>
           </ul>
         </nav>
