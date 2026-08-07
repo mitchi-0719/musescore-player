@@ -32,6 +32,22 @@ const DIRECTION_TAG_PATTERN = /<direction\b[\s\S]*?<\/direction>/g
 const DIRECTION_TYPE_TAG_PATTERN = /<direction-type\b[\s\S]*?<\/direction-type>/
 const NOTE_TAG_PATTERN = /<note\b[\s\S]*?<\/note>/g
 
+const assertPlayableMusicXml = (musicXml: string): void => {
+  const doc = new DOMParser().parseFromString(musicXml, 'application/xml')
+  const hasParserError = Boolean(doc.querySelector('parsererror'))
+  const scoreParts = doc.querySelectorAll('part-list > score-part').length
+  const parts = doc.querySelectorAll('score-partwise > part').length
+  const measures = doc.querySelectorAll(
+    'score-partwise > part > measure'
+  ).length
+
+  if (hasParserError || scoreParts === 0 || parts === 0 || measures === 0) {
+    throw new Error(
+      'MSCZ を MusicXML に変換できませんでした。MuseScore でファイルを開き、最新版の MSCZ として保存し直してください。'
+    )
+  }
+}
+
 const STEP_BY_INDEX = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
 const NATURAL_TPC_BY_STEP: Record<string, number> = {
   C: 14,
@@ -353,6 +369,7 @@ export const convertMsczToMusicXml = async (
   const score = await WebMscore.load('mscz', webMscoreBinary, [], true)
 
   const rawMusicXml = await score.saveXml()
+  assertPlayableMusicXml(rawMusicXml)
   const restoreResult = await restoreHarmonyFromMscz(
     rawMusicXml,
     msczArchiveBinary

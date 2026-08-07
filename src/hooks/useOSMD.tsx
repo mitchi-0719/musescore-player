@@ -16,6 +16,7 @@ export const useOSMD = (
   const [renderError, setRenderError] = useState<string | null>(null)
   const [isRendering, setIsRendering] = useState(false)
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null)
+  const isLoadedRef = useRef(false)
   const zoomRef = useRef(zoom)
 
   useEffect(() => {
@@ -46,7 +47,7 @@ export const useOSMD = (
         }
 
         resizeTimeoutId = setTimeout(() => {
-          if (osmdRef.current) {
+          if (osmdRef.current && isLoadedRef.current) {
             console.log(
               '[useOSMD] Executing manual resize and render due to width change'
             )
@@ -108,31 +109,66 @@ export const useOSMD = (
         const { OpenSheetMusicDisplay } = await import('opensheetmusicdisplay')
         if (isCancelled) return
 
-        const osmd = new OpenSheetMusicDisplay(container, {
-          autoResize: false, // 画面サイズ変更時の自動リサイズをオフ（幅変更のみ自前で制御するため）
-          backend: 'svg', // デモと同じくっきりしたSVG描画
-          drawTitle: true, // タイトルを描画する
-          drawSubtitle: true, // サブタイトルを描画する
-          drawingParameters: 'default', // デモ標準の美しいレイアウト
-          disableCursor: false, // 必須：Tone.jsと同期する縦棒（カーソル）を使うため
-        })
-
-        osmdRef.current = osmd
-
-        if (musicXml) {
-          console.log('[useOSMD] Loading musicXml string')
-          await osmd.load(musicXml)
-        } else if (musicMxl) {
-          console.log('[useOSMD] Loading musicMxl blob')
+        const createOsmd = () =>
+          new OpenSheetMusicDisplay(container, {
+            autoResize: false, // 画面サイズ変更時の自動リサイズをオフ（幅変更のみ自前で制御するため）
+            backend: 'svg', // デモと同じくっきりしたSVG描画
+            drawTitle: true, // タイトルを描画する
+            drawSubtitle: true, // サブタイトルを描画する
+            drawingParameters: 'default', // デモ標準の美しいレイアウト
+            disableCursor: false, // 必須：Tone.jsと同期する縦棒（カーソル）を使うため
+          })
+        const loadMxl = async (osmd: OpenSheetMusicDisplay) => {
+          if (!musicMxl) throw new Error('MXL data is not available')
           const arrayBuffer = new Uint8Array(musicMxl).buffer
           await osmd.load(
             new Blob([arrayBuffer], {
-              type: 'application/vnd.recordare.musicxml',
+              type: 'application/vnd.recordare.musicxml+xml',
             })
           )
-        } else {
+        }
+
+        let osmd = createOsmd()
+        osmdRef.current = osmd
+        isLoadedRef.current = false
+
+        if (musicXml) {
+          console.log('[useOSMD] Loading musicXml string')
+          try {
+            await osmd.load(musicXml)
+          } catch (xmlError) {
+            if (!musicMxl || isCancelled) throw xmlError
+
+            console.warn(
+              '[useOSMD] MusicXML load failed; retrying with MXL',
+              xmlError
+            )
+            osmd.clear()
+            container.innerHTML = ''
+            osmd = createOsmd()
+            osmdRef.current = osmd
+            await loadMxl(osmd)
+          }
+        } else if (musicMxl) {
+          console.log('[useOSMD] Loading musicMxl blob')
+          await loadMxl(osmd)
+        } else return
+
+        if (isCancelled) {
+          osmd.clear()
           return
         }
+
+        // OSMD 2.0.0 は、一部の MusicXML の slide を譜表の改行位置に
+        // 描画すると GraphicalGlissando 内で HasEndLine 参照に失敗する。
+        // XML や再生情報は保持し、該当する楽譜でスライド線の描画だけを止める。
+        if (musicXml && /<slide\b/.test(musicXml)) {
+          console.warn(
+            '[useOSMD] Disabling slide rendering to avoid an OSMD layout error'
+          )
+          osmd.EngravingRules.RenderGlissandi = false
+        }
+        isLoadedRef.current = true
 
         // 描画準備中に変更された倍率も、初回描画に反映する。
         osmd.zoom = zoomRef.current
@@ -147,6 +183,10 @@ export const useOSMD = (
       } catch (err) {
         if (!isCancelled) {
           console.error('OSMD Render Error:', err)
+          isLoadedRef.current = false
+          osmdRef.current?.clear()
+          osmdRef.current = null
+          container.innerHTML = ''
           setRenderError('楽譜の描画中にエラーが発生しました')
           setIsRendering(false)
         }
@@ -158,6 +198,7 @@ export const useOSMD = (
     return () => {
       console.log('[useOSMD] useEffect cleanup - clearing OSMD')
       isCancelled = true
+      isLoadedRef.current = false
       if (osmdRef.current) {
         osmdRef.current.clear()
         osmdRef.current = null
