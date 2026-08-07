@@ -28,6 +28,7 @@ export type NoteEvent = {
   isRest: boolean
   isTieContinuation: boolean
   isStaccato: boolean
+  rollSubdivision: number | null
   displayPitch: string | null
 }
 
@@ -462,6 +463,21 @@ const hasTieStop = (note: Element): boolean =>
 const hasStaccato = (note: Element): boolean =>
   note.querySelector(':scope > notations > articulations > staccato') !== null
 
+const getRollSubdivision = (note: Element): number | null => {
+  const tremolo = note.querySelector(':scope > notations > ornaments > tremolo')
+  if (!tremolo) return null
+
+  // start/stop は2音間トレモロ。ここではドラムロールとして書き出される
+  // single（または type 省略）のみを、刻み幅へ変換する。
+  const type = tremolo.getAttribute('type')
+  if (type && type !== 'single' && type !== 'unmeasured') return null
+
+  const marks = Number(tremolo.textContent?.trim())
+  if (!Number.isInteger(marks) || marks < 1 || marks > 8) return null
+
+  return TICKS_PER_QUARTER / 2 ** marks
+}
+
 const getInstrumentId = (note: Element): string | null =>
   note.querySelector('instrument')?.getAttribute('id') || null
 
@@ -778,6 +794,7 @@ export const parseMusicXmlForEvents = async (
         const isChord = note.querySelector('chord') !== null
         const isRest = note.querySelector('rest') !== null
         const isStaccato = hasStaccato(note)
+        const rollSubdivision = getRollSubdivision(note)
 
         const currentTime = voiceTicks.get(voice) ?? startTicks
         const baseTime = Math.max(currentTime, startTicks)
@@ -810,6 +827,7 @@ export const parseMusicXmlForEvents = async (
             isRest: true,
             isTieContinuation: false,
             isStaccato: false,
+            rollSubdivision: null,
             displayPitch: null,
           })
           if (!isChord) {
@@ -856,6 +874,7 @@ export const parseMusicXmlForEvents = async (
             isRest: false,
             isTieContinuation: true,
             isStaccato,
+            rollSubdivision,
             displayPitch: pendingTie.displayPitch,
           })
 
@@ -892,6 +911,7 @@ export const parseMusicXmlForEvents = async (
             isRest: false,
             isTieContinuation: false,
             isStaccato,
+            rollSubdivision,
             displayPitch: parsedNote.displayPitch,
           }
           events.push(event)
@@ -941,6 +961,7 @@ export const parseMusicXmlForEvents = async (
             isRest: false,
             isTieContinuation: false,
             isStaccato,
+            rollSubdivision,
             displayPitch: parsedNote.displayPitch,
           }
           events.push(event)
@@ -989,6 +1010,7 @@ export const parseMusicXmlForEvents = async (
           isRest: false,
           isTieContinuation: false,
           isStaccato,
+          rollSubdivision,
           displayPitch: parsedNote.displayPitch,
         })
 
