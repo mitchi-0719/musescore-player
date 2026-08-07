@@ -29,6 +29,9 @@ export type NoteEvent = {
   isTieContinuation: boolean
   isStaccato: boolean
   rollSubdivision: number | null
+  glissandoTargetMidi: number | null
+  glissandoDuration: number | null
+  glissandoMode: 'discrete' | 'continuous' | null
   displayPitch: string | null
 }
 
@@ -478,6 +481,31 @@ const getRollSubdivision = (note: Element): number | null => {
   return TICKS_PER_QUARTER / 2 ** marks
 }
 
+type GlissandoMarker = {
+  key: string
+  type: 'start' | 'stop'
+  mode: 'discrete' | 'continuous'
+}
+
+const getGlissandoMarkers = (note: Element, voice: string): GlissandoMarker[] =>
+  Array.from(
+    note.querySelectorAll(
+      ':scope > notations > glissando, :scope > notations > slide'
+    )
+  ).flatMap((marker) => {
+    const type = marker.getAttribute('type')
+    if (type !== 'start' && type !== 'stop') return []
+
+    const number = marker.getAttribute('number') || '1'
+    return [
+      {
+        key: `${voice}:${marker.tagName}:${number}`,
+        type,
+        mode: marker.tagName === 'slide' ? 'continuous' : 'discrete',
+      },
+    ]
+  })
+
 const getInstrumentId = (note: Element): string | null =>
   note.querySelector('instrument')?.getAttribute('id') || null
 
@@ -540,7 +568,7 @@ const parsePitchNote = (note: Element): ParsedNoteData => {
   return {
     note: noteName,
     playbackKey: noteName,
-    midi: finalOctave * 12 + normalizedSemitone,
+    midi: (finalOctave + 1) * 12 + normalizedSemitone,
     samplerId: 'piano',
     instrumentName: null,
     displayPitch: noteName,
@@ -747,6 +775,7 @@ export const parseMusicXmlForEvents = async (
     }
     const voiceTicks = new Map<string, number>()
     const pendingTies = new Map<string, PendingTie>()
+    const pendingGlissandos = new Map<string, NoteEvent>()
     const dynamicChangesByStaff = getDynamicChangesByStaff(
       part,
       measureStartTicks,
@@ -828,6 +857,9 @@ export const parseMusicXmlForEvents = async (
             isTieContinuation: false,
             isStaccato: false,
             rollSubdivision: null,
+            glissandoTargetMidi: null,
+            glissandoDuration: null,
+            glissandoMode: null,
             displayPitch: null,
           })
           if (!isChord) {
@@ -847,6 +879,22 @@ export const parseMusicXmlForEvents = async (
         }
 
         const lyric = getLyric(note)
+        const registerGlissando = (event: NoteEvent) => {
+          getGlissandoMarkers(note, voice).forEach((marker) => {
+            if (marker.type === 'start') {
+              event.glissandoMode = marker.mode
+              pendingGlissandos.set(marker.key, event)
+              return
+            }
+
+            const startEvent = pendingGlissandos.get(marker.key)
+            if (startEvent && startTime > startEvent.time) {
+              startEvent.glissandoTargetMidi = event.midi
+              startEvent.glissandoDuration = startTime - startEvent.time
+            }
+            pendingGlissandos.delete(marker.key)
+          })
+        }
         const tieKey = `${voice}:${parsedNote.playbackKey}`
         const tieStart = hasTieStart(note)
         const tieStop = hasTieStop(note)
@@ -875,8 +923,13 @@ export const parseMusicXmlForEvents = async (
             isTieContinuation: true,
             isStaccato,
             rollSubdivision,
+            glissandoTargetMidi: null,
+            glissandoDuration: null,
+            glissandoMode: null,
             displayPitch: pendingTie.displayPitch,
           })
+
+          registerGlissando(events[events.length - 1])
 
           if (!tieStart) {
             pendingTie.startEvent.duration = pendingTie.duration
@@ -912,9 +965,13 @@ export const parseMusicXmlForEvents = async (
             isTieContinuation: false,
             isStaccato,
             rollSubdivision,
+            glissandoTargetMidi: null,
+            glissandoDuration: null,
+            glissandoMode: null,
             displayPitch: parsedNote.displayPitch,
           }
           events.push(event)
+          registerGlissando(event)
 
           pendingTies.set(tieKey, {
             partId,
@@ -962,9 +1019,13 @@ export const parseMusicXmlForEvents = async (
             isTieContinuation: false,
             isStaccato,
             rollSubdivision,
+            glissandoTargetMidi: null,
+            glissandoDuration: null,
+            glissandoMode: null,
             displayPitch: parsedNote.displayPitch,
           }
           events.push(event)
+          registerGlissando(event)
 
           pendingTies.set(tieKey, {
             partId,
@@ -1011,8 +1072,12 @@ export const parseMusicXmlForEvents = async (
           isTieContinuation: false,
           isStaccato,
           rollSubdivision,
+          glissandoTargetMidi: null,
+          glissandoDuration: null,
+          glissandoMode: null,
           displayPitch: parsedNote.displayPitch,
         })
+        registerGlissando(events[events.length - 1])
 
         if (!isChord) {
           voiceTicks.set(voice, startTime + duration)

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type * as ToneModule from 'tone'
 
-import { DRUM_MAP } from '../constants/drum'
+import { DRUM_MAP, MIDI_UNPITCHED_TO_KEY } from '../constants/drum'
 import { PIANO_MAP } from '../constants/piano'
 import type { NoteEvent, SamplerId, TempoChange } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
@@ -110,6 +110,11 @@ const MAX_PART_BOOST_DB = 12
 const MAX_MASTER_BOOST_DB = 6
 const MASTER_LIMITER_THRESHOLD_DB = -1
 const VOLUME_RAMP_SECONDS = 0.03
+// グリッサンドの中間音はサンプルの余韻を重ねず、次の音までに完全停止する。
+const GLISSANDO_RELEASE_SECONDS = 0.005
+const GLISSANDO_VOLUME_MULTIPLIER = 1.25
+// MuseScore と同様、開始音を保持してグリッサンド本体を末尾約1/3へ寄せる。
+const GLISSANDO_PORTION = 0.33
 // ミキサーの表示値は維持したまま、ドラム音源の出力だけを少し抑える。
 const DRUM_VOLUME_MULTIPLIER = 0.5
 // 高密度な連打で音圧が上がりすぎないよう、ロール時の各打音だけを抑える。
@@ -154,6 +159,15 @@ const getClosestPianoSampleKey = (
 
   return 'C4'
 }
+const getGlissandoPlaybackKey = (
+  samplerId: SamplerId,
+  midi: number,
+  Tone: typeof ToneModule
+) => {
+  if (samplerId === 'clap') return 'C4'
+  if (samplerId === 'drum') return MIDI_UNPITCHED_TO_KEY[midi] ?? null
+  return Tone.Frequency(midi, 'midi').toNote()
+}
 const getRequiredSamplerConfigs = (
   parsedEvents: NoteEvent[],
   Tone: typeof ToneModule
@@ -167,6 +181,21 @@ const getRequiredSamplerConfigs = (
 
   parsedEvents.forEach((event) => {
     if (event.isRest) return
+
+    if (
+      event.glissandoTargetMidi !== null &&
+      event.glissandoTargetMidi !== event.midi
+    ) {
+      const direction = event.glissandoTargetMidi > event.midi ? 1 : -1
+      for (
+        let midi = event.midi;
+        midi !== event.glissandoTargetMidi;
+        midi += direction
+      ) {
+        const playbackKey = getGlissandoPlaybackKey(event.samplerId, midi, Tone)
+        if (playbackKey) requiredKeys[event.samplerId].add(playbackKey)
+      }
+    }
 
     if (event.samplerId === 'piano') {
       requiredKeys.piano.add(
@@ -201,11 +230,21 @@ const getRequiredSamplerConfigs = (
 }
 const createSamplerFromSharedBuffers = (
   buffers: ToneModule.ToneAudioBuffers,
-  sampleKeys: string[]
+  sampleKeys: string[],
+  release?: number
 ) => {
   const Tone = _toneModule!
+  const urls = Object.fromEntries(
+    sampleKeys.map((key) => [key, buffers.get(key)])
+  )
+
+  if (release === undefined) {
+    return new Tone.Sampler({ urls })
+  }
+
   return new Tone.Sampler({
-    urls: Object.fromEntries(sampleKeys.map((key) => [key, buffers.get(key)])),
+    urls,
+    release,
   })
 }
 
@@ -218,6 +257,12 @@ export const useAudioPlayer = (
     Partial<Record<SamplerId, ToneModule.ToneAudioBuffers>>
   >({})
   const partSamplersRef = useRef<Record<string, ToneModule.Sampler>>({})
+  const glissandoPartSamplersRef = useRef<Record<string, ToneModule.Sampler>>(
+    {}
+  )
+  const activeGlissandoSourcesRef = useRef<Set<ToneModule.ToneBufferSource>>(
+    new Set()
+  )
   const partChannelsRef = useRef<Record<string, ToneModule.Channel>>({})
   const masterChannelRef = useRef<ToneModule.Channel | null>(null)
   const masterLimiterRef = useRef<ToneModule.Limiter | null>(null)
@@ -483,6 +528,7 @@ export const useAudioPlayer = (
     }
     const channels: Record<string, ToneModule.Channel> = {}
     const partSamplers: Record<string, ToneModule.Sampler> = {}
+    const glissandoPartSamplers: Record<string, ToneModule.Sampler> = {}
     const currentMixerState = mixerStateRef.current
     const hasSolo =
       currentMixerState.soloPartId !== null &&
@@ -514,15 +560,25 @@ export const useAudioPlayer = (
         buffers,
         Object.keys(config.urls)
       ).connect(channel)
+      glissandoPartSamplers[key] = createSamplerFromSharedBuffers(
+        buffers,
+        Object.keys(config.urls),
+        GLISSANDO_RELEASE_SECONDS
+      ).connect(channel)
     })
 
     partChannelsRef.current = channels
     partSamplersRef.current = partSamplers
+    glissandoPartSamplersRef.current = glissandoPartSamplers
 
     return () => {
       Object.values(partSamplers).forEach((sampler) => sampler.dispose())
+      Object.values(glissandoPartSamplers).forEach((sampler) =>
+        sampler.dispose()
+      )
       Object.values(channels).forEach((channel) => channel.dispose())
       partSamplersRef.current = {}
+      glissandoPartSamplersRef.current = {}
       partChannelsRef.current = {}
     }
   }, [
@@ -607,6 +663,107 @@ export const useAudioPlayer = (
 
       if (sampler?.loaded) {
         if (
+          event.samplerId === 'piano' &&
+          event.glissandoMode !== null &&
+          event.glissandoTargetMidi !== null &&
+          event.glissandoDuration !== null &&
+          event.glissandoDuration > 0 &&
+          event.glissandoTargetMidi !== event.midi
+        ) {
+          const buffers = sharedSampleBuffersRef.current.piano
+          const channel = partChannelsRef.current[event.partId]
+          if (!buffers || !channel) return
+
+          const endTime = time + Tone.Ticks(event.glissandoDuration).toSeconds()
+          const pianoKeyMap = getPianoSampleKeyByMidi(Tone)
+          const sampleKeys = Array.from(
+            new Set([
+              getClosestPianoSampleKey(event.midi, pianoKeyMap),
+              getClosestPianoSampleKey(event.glissandoTargetMidi, pianoKeyMap),
+            ])
+          )
+          const sourceGain =
+            (getDynamicGain(event.velocity) * GLISSANDO_VOLUME_MULTIPLIER) /
+            (sampleKeys.length === 1 ? 1 : 1.25)
+
+          sampleKeys.forEach((sampleKey) => {
+            const buffer = buffers.get(sampleKey)
+            if (!buffer?.loaded) return
+
+            const sampleMidi = Tone.Frequency(sampleKey).toMidi()
+            const startRate = 2 ** ((event.midi - sampleMidi) / 12)
+            const endRate =
+              2 ** ((event.glissandoTargetMidi! - sampleMidi) / 12)
+            const source = new Tone.ToneBufferSource({
+              url: buffer,
+              playbackRate: startRate,
+              fadeOut: GLISSANDO_RELEASE_SECONDS,
+            }).connect(channel)
+
+            activeGlissandoSourcesRef.current.add(source)
+            source.onended = () => {
+              activeGlissandoSourcesRef.current.delete(source)
+              source.dispose()
+            }
+            source.playbackRate.linearRampToValueAtTime(endRate, endTime)
+            source.start(time, 0, `${event.glissandoDuration}i`, sourceGain)
+          })
+          return
+        }
+
+        if (
+          event.glissandoTargetMidi !== null &&
+          event.glissandoDuration !== null &&
+          event.glissandoDuration > 0 &&
+          event.glissandoTargetMidi !== event.midi
+        ) {
+          const glissandoSampler =
+            glissandoPartSamplersRef.current[
+              `${event.partId}:${event.samplerId}`
+            ]
+          if (!glissandoSampler?.loaded) return
+
+          const direction = event.glissandoTargetMidi > event.midi ? 1 : -1
+          const stepCount = Math.abs(event.glissandoTargetMidi - event.midi)
+          const glissandoWindow = event.glissandoDuration * GLISSANDO_PORTION
+          const headDuration = event.glissandoDuration - glissandoWindow
+          const intermediateCount = Math.max(1, stepCount - 1)
+          const stepDuration = glissandoWindow / intermediateCount
+
+          // 頭の音を約2/3保持し、中間音は末尾1/3で重ならないよう順に鳴らす。
+          sampler.triggerAttackRelease(
+            event.playbackKey,
+            `${Math.min(event.duration, headDuration)}i`,
+            time,
+            getDynamicGain(event.velocity) *
+              samplerVolumeMultiplier *
+              GLISSANDO_VOLUME_MULTIPLIER
+          )
+
+          for (let index = 1; index < stepCount; index += 1) {
+            const playbackKey = getGlissandoPlaybackKey(
+              event.samplerId,
+              event.midi + index * direction,
+              Tone
+            )
+            if (!playbackKey) continue
+
+            glissandoSampler.triggerAttackRelease(
+              playbackKey,
+              `${Math.max(1, stepDuration * 0.95)}i`,
+              time +
+                Tone.Ticks(
+                  headDuration + (index - 1) * stepDuration
+                ).toSeconds(),
+              getDynamicGain(event.velocity) *
+                samplerVolumeMultiplier *
+                GLISSANDO_VOLUME_MULTIPLIER
+            )
+          }
+          return
+        }
+
+        if (
           event.samplerId === 'drum' &&
           event.rollSubdivision !== null &&
           event.rollSubdivision > 0
@@ -676,6 +833,13 @@ export const useAudioPlayer = (
       metronomeLoopRef.current?.stop()
       Object.values(samplers.current).forEach((s) => s.releaseAll())
       Object.values(partSamplersRef.current).forEach((s) => s.releaseAll())
+      Object.values(glissandoPartSamplersRef.current).forEach((s) =>
+        s.releaseAll()
+      )
+      activeGlissandoSourcesRef.current.forEach((source) => {
+        source.stop()
+      })
+      activeGlissandoSourcesRef.current.clear()
       metronomeSynthRef.current?.triggerRelease()
       if (hasObservedPlaybackStateRef.current) {
         onPlaybackStopRef.current?.()
