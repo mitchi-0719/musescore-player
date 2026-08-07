@@ -20,6 +20,8 @@ export type NoteEvent = {
   note: string
   playbackKey: string
   midi: number
+  velocity: number
+  dynamic: string
   lyric: string | null
   voice: string
   measureNumber: number
@@ -44,6 +46,8 @@ type PendingTie = {
   note: string
   playbackKey: string
   midi: number
+  velocity: number
+  dynamic: string
   lyric: string | null
   startTime: number
   duration: number
@@ -62,6 +66,24 @@ type ParsedNoteData = {
 }
 
 const TICKS_PER_QUARTER = 192
+const DEFAULT_VELOCITY = 80
+
+const VELOCITY_BY_DYNAMIC: Record<string, number> = {
+  pppppp: 1,
+  ppppp: 5,
+  pppp: 10,
+  ppp: 16,
+  pp: 33,
+  p: 49,
+  mp: 64,
+  mf: 80,
+  f: 96,
+  ff: 112,
+  fff: 126,
+  ffff: 127,
+  fffff: 127,
+  ffffff: 127,
+}
 
 const STEP_TO_SEMITONE: Record<string, number> = {
   C: 0,
@@ -263,6 +285,168 @@ const getTempoChanges = (
   return Array.from(changes, ([time, bpm]) => ({ time, bpm })).sort(
     (left, right) => left.time - right.time
   )
+}
+
+type DynamicChange = {
+  time: number
+  velocity: number
+  name: string
+}
+
+type DynamicWedge = {
+  startTime: number
+  endTime: number
+  type: 'crescendo' | 'diminuendo'
+}
+
+type DynamicProfile = {
+  changes: DynamicChange[]
+  wedges: DynamicWedge[]
+}
+
+const getDynamicChangesByStaff = (
+  part: Element,
+  measureStartTicks: number[],
+  fallbackDivisions: number
+): Map<string, DynamicProfile> => {
+  const profilesByStaff = new Map<string, DynamicProfile>()
+  const openWedges = new Map<
+    string,
+    { startTime: number; type: DynamicWedge['type']; staff: string }
+  >()
+  let currentDivisions = fallbackDivisions
+
+  const getProfile = (staff: string) => {
+    const profile = profilesByStaff.get(staff) ?? { changes: [], wedges: [] }
+    profilesByStaff.set(staff, profile)
+    return profile
+  }
+
+  part.querySelectorAll(':scope > measure').forEach((measure, index) => {
+    currentDivisions = getMeasureDivisions(measure, currentDivisions)
+    const measureStart = measureStartTicks[index] ?? 0
+    let cursor = measureStart
+
+    Array.from(measure.children).forEach((child) => {
+      const tag = child.tagName.toLowerCase()
+      if (tag === 'backup' || tag === 'forward') {
+        const rawDuration = Number(
+          child.querySelector('duration')?.textContent || '0'
+        )
+        const ticks = Number.isFinite(rawDuration)
+          ? Math.round((rawDuration / currentDivisions) * TICKS_PER_QUARTER)
+          : 0
+        cursor = Math.max(
+          measureStart,
+          cursor + (tag === 'backup' ? -ticks : ticks)
+        )
+        return
+      }
+
+      if (tag === 'note') {
+        if (!child.querySelector('chord')) {
+          cursor += getDurationTicks(child, currentDivisions)
+        }
+        return
+      }
+
+      if (tag !== 'direction') return
+      const staff = child.querySelector(':scope > staff')?.textContent || '1'
+      const rawOffset = Number(
+        child.querySelector(':scope > offset')?.textContent || '0'
+      )
+      const offsetTicks = Number.isFinite(rawOffset)
+        ? Math.round((rawOffset / currentDivisions) * TICKS_PER_QUARTER)
+        : 0
+      const directionTime = Math.max(0, cursor + offsetTicks)
+
+      const wedge = child.querySelector('direction-type > wedge')
+      const wedgeType = wedge?.getAttribute('type')
+      const wedgeNumber = wedge?.getAttribute('number') || '1'
+      const wedgeKey = `${staff}:${wedgeNumber}`
+      if (wedgeType === 'crescendo' || wedgeType === 'diminuendo') {
+        openWedges.set(wedgeKey, {
+          startTime: directionTime,
+          type: wedgeType,
+          staff,
+        })
+      } else if (wedgeType === 'stop') {
+        const openWedge = openWedges.get(wedgeKey)
+        if (openWedge && directionTime > openWedge.startTime) {
+          getProfile(openWedge.staff).wedges.push({
+            startTime: openWedge.startTime,
+            endTime: directionTime,
+            type: openWedge.type,
+          })
+        }
+        openWedges.delete(wedgeKey)
+      }
+
+      const dynamics = child.querySelector('direction-type > dynamics')
+      const dynamicName = dynamics?.firstElementChild?.tagName.toLowerCase()
+      const soundDynamics = Number(
+        child.querySelector('sound')?.getAttribute('dynamics') || ''
+      )
+      const velocity =
+        Number.isFinite(soundDynamics) && soundDynamics > 0
+          ? Math.round(soundDynamics * 0.9)
+          : dynamicName
+            ? VELOCITY_BY_DYNAMIC[dynamicName]
+            : undefined
+      if (velocity === undefined) return
+
+      getProfile(staff).changes.push({
+        time: directionTime,
+        velocity: Math.min(127, Math.max(1, velocity)),
+        name: dynamicName || `velocity ${velocity}`,
+      })
+    })
+  })
+
+  profilesByStaff.forEach((profile) => {
+    profile.changes.sort((left, right) => left.time - right.time)
+    profile.wedges.sort((left, right) => left.startTime - right.startTime)
+  })
+  return profilesByStaff
+}
+
+const getDynamicAtTime = (
+  profile: DynamicProfile | undefined,
+  time: number
+): { velocity: number; dynamic: string } => {
+  const changes = profile?.changes ?? []
+  const current = changes.reduce<DynamicChange>(
+    (change, candidate) => (candidate.time <= time ? candidate : change),
+    { time: 0, velocity: DEFAULT_VELOCITY, name: 'mf (default)' }
+  )
+  const wedge = profile?.wedges.find(
+    (candidate) => candidate.startTime <= time && time < candidate.endTime
+  )
+  if (!wedge) return { velocity: current.velocity, dynamic: current.name }
+
+  const start = changes.reduce<DynamicChange>(
+    (change, candidate) =>
+      candidate.time <= wedge.startTime ? candidate : change,
+    { time: 0, velocity: DEFAULT_VELOCITY, name: 'mf (default)' }
+  )
+  const endChange = changes.find(
+    (change) => change.time >= wedge.endTime && change.time <= wedge.endTime + 1
+  )
+  const direction = wedge.type === 'crescendo' ? 1 : -1
+  const endVelocity = endChange?.velocity ?? start.velocity + direction * 16
+  const progress = (time - wedge.startTime) / (wedge.endTime - wedge.startTime)
+  const velocity = Math.min(
+    127,
+    Math.max(
+      1,
+      Math.round(start.velocity + (endVelocity - start.velocity) * progress)
+    )
+  )
+  const wedgeName = wedge.type === 'crescendo' ? 'cresc.' : 'dim.'
+  return {
+    velocity,
+    dynamic: `${wedgeName} ${start.name} → ${endChange?.name ?? `±16`}`,
+  }
 }
 
 const hasTieStart = (note: Element): boolean =>
@@ -547,6 +731,11 @@ export const parseMusicXmlForEvents = async (
     }
     const voiceTicks = new Map<string, number>()
     const pendingTies = new Map<string, PendingTie>()
+    const dynamicChangesByStaff = getDynamicChangesByStaff(
+      part,
+      measureStartTicks,
+      fallbackDivisions
+    )
     let currentDivisions = fallbackDivisions
 
     part.querySelectorAll('measure').forEach((measure, measureIndex) => {
@@ -593,6 +782,11 @@ export const parseMusicXmlForEvents = async (
         const currentTime = voiceTicks.get(voice) ?? startTicks
         const baseTime = Math.max(currentTime, startTicks)
         const startTime = isChord ? baseTime : measureCursor
+        const staff = note.querySelector(':scope > staff')?.textContent || '1'
+        const { velocity, dynamic } = getDynamicAtTime(
+          dynamicChangesByStaff.get(staff),
+          startTime
+        )
 
         const rawNum = measure.getAttribute('number')
         const measureNumber = rawNum ? parseInt(rawNum, 10) : measureIndex + 1
@@ -608,6 +802,8 @@ export const parseMusicXmlForEvents = async (
             note: 'rest',
             playbackKey: '',
             midi: 0,
+            velocity,
+            dynamic,
             lyric: null,
             voice,
             measureNumber,
@@ -652,6 +848,8 @@ export const parseMusicXmlForEvents = async (
             note: pendingTie.note,
             playbackKey: pendingTie.playbackKey,
             midi: pendingTie.midi,
+            velocity: pendingTie.startEvent.velocity,
+            dynamic: pendingTie.startEvent.dynamic,
             lyric: pendingTie.lyric,
             voice: pendingTie.voice,
             measureNumber,
@@ -686,6 +884,8 @@ export const parseMusicXmlForEvents = async (
             note: parsedNote.note,
             playbackKey: parsedNote.playbackKey,
             midi: parsedNote.midi,
+            velocity,
+            dynamic,
             lyric,
             voice,
             measureNumber,
@@ -705,6 +905,8 @@ export const parseMusicXmlForEvents = async (
             note: parsedNote.note,
             playbackKey: parsedNote.playbackKey,
             midi: parsedNote.midi,
+            velocity,
+            dynamic,
             lyric,
             startTime,
             duration,
@@ -731,6 +933,8 @@ export const parseMusicXmlForEvents = async (
             note: parsedNote.note,
             playbackKey: parsedNote.playbackKey,
             midi: parsedNote.midi,
+            velocity,
+            dynamic,
             lyric,
             voice,
             measureNumber,
@@ -750,6 +954,8 @@ export const parseMusicXmlForEvents = async (
             note: parsedNote.note,
             playbackKey: parsedNote.playbackKey,
             midi: parsedNote.midi,
+            velocity,
+            dynamic,
             lyric,
             startTime,
             duration,
@@ -775,6 +981,8 @@ export const parseMusicXmlForEvents = async (
           note: parsedNote.note,
           playbackKey: parsedNote.playbackKey,
           midi: parsedNote.midi,
+          velocity,
+          dynamic,
           lyric,
           voice,
           measureNumber,
