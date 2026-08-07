@@ -112,6 +112,8 @@ const MASTER_LIMITER_THRESHOLD_DB = -1
 const VOLUME_RAMP_SECONDS = 0.03
 // ミキサーの表示値は維持したまま、ドラム音源の出力だけを少し抑える。
 const DRUM_VOLUME_MULTIPLIER = 0.8
+const REFERENCE_DYNAMIC_VELOCITY = 80
+const DYNAMIC_GAIN_EXPONENT = 2
 const clampVolume = (volume: number) =>
   Math.min(MAX_VOLUME, Math.max(0, volume))
 const mixerValueToDecibels = (volume: number, maxBoostDb: number) => {
@@ -127,6 +129,11 @@ const mixerValueToDecibels = (volume: number, maxBoostDb: number) => {
 }
 const getSamplerVolumeMultiplier = (samplerId: string) =>
   samplerId === 'drum' ? DRUM_VOLUME_MULTIPLIER : 1
+// mf (velocity 80) をミキサーで指定した音量そのものとして扱い、
+// 強弱はその基準に対する相対ゲインにする。サンプル音源でも差が聴き取れるよう、
+// MIDI velocity の比率を二乗してダイナミックレンジを広げる。
+const getDynamicGain = (velocity: number) =>
+  Math.pow(velocity / REFERENCE_DYNAMIC_VELOCITY, DYNAMIC_GAIN_EXPONENT)
 const getDefaultPartState = (): PartMixerState => ({
   volume: DEFAULT_VOLUME,
   isMuted: false,
@@ -592,7 +599,9 @@ export const useAudioPlayer = (
 
       const sampler =
         partSamplersRef.current[`${event.partId}:${event.samplerId}`]
-      const velocity = getSamplerVolumeMultiplier(event.samplerId)
+      const samplerVolumeMultiplier = getSamplerVolumeMultiplier(
+        event.samplerId
+      )
 
       if (sampler?.loaded) {
         // MuseScore の既定値（staccatoGateTime = 50）に合わせて、
@@ -602,7 +611,7 @@ export const useAudioPlayer = (
           event.playbackKey,
           `${event.duration * gateTime}i`,
           time,
-          velocity
+          getDynamicGain(event.velocity) * samplerVolumeMultiplier
         )
       }
     }, partEvents)
