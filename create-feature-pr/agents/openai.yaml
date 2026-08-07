@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Feature PR"
+  short_description: "変更をcommitしてdevelop向けPRを作成"
+  default_prompt: "Use $create-feature-pr to split and commit the changes as needed, push the feature branch, and create a pull request targeting develop."
