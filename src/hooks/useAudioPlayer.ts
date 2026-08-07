@@ -111,7 +111,9 @@ const MAX_MASTER_BOOST_DB = 6
 const MASTER_LIMITER_THRESHOLD_DB = -1
 const VOLUME_RAMP_SECONDS = 0.03
 // ミキサーの表示値は維持したまま、ドラム音源の出力だけを少し抑える。
-const DRUM_VOLUME_MULTIPLIER = 0.8
+const DRUM_VOLUME_MULTIPLIER = 0.5
+// 高密度な連打で音圧が上がりすぎないよう、ロール時の各打音だけを抑える。
+const DRUM_ROLL_VOLUME_MULTIPLIER = 0.2
 const REFERENCE_DYNAMIC_VELOCITY = 80
 const DYNAMIC_GAIN_EXPONENT = 2
 const clampVolume = (volume: number) =>
@@ -604,6 +606,32 @@ export const useAudioPlayer = (
       )
 
       if (sampler?.loaded) {
+        if (
+          event.samplerId === 'drum' &&
+          event.rollSubdivision !== null &&
+          event.rollSubdivision > 0
+        ) {
+          const hitDuration = Math.min(
+            event.rollSubdivision * 0.8,
+            event.duration
+          )
+          for (
+            let offset = 0;
+            offset < event.duration;
+            offset += event.rollSubdivision
+          ) {
+            sampler.triggerAttackRelease(
+              event.playbackKey,
+              `${hitDuration}i`,
+              time + Tone.Ticks(offset).toSeconds(),
+              getDynamicGain(event.velocity) *
+                samplerVolumeMultiplier *
+                DRUM_ROLL_VOLUME_MULTIPLIER
+            )
+          }
+          return
+        }
+
         // MuseScore の既定値（staccatoGateTime = 50）に合わせて、
         // 発音時間だけを記譜音価の 50% にする。次の音の開始時刻は変えない。
         const gateTime = event.isStaccato ? 0.5 : 1

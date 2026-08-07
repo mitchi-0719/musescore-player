@@ -23,9 +23,14 @@ type RestoreHarmonyResult = {
   musicXml: string
 }
 
+type MscxChordPlayback = {
+  tremoloMarks: number | null
+}
+
 const HARMONY_TAG_PATTERN = /<harmony\b[\s\S]*?<\/harmony>/g
 const DIRECTION_TAG_PATTERN = /<direction\b[\s\S]*?<\/direction>/g
 const DIRECTION_TYPE_TAG_PATTERN = /<direction-type\b[\s\S]*?<\/direction-type>/
+const NOTE_TAG_PATTERN = /<note\b[\s\S]*?<\/note>/g
 
 const STEP_BY_INDEX = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
 const NATURAL_TPC_BY_STEP: Record<string, number> = {
@@ -195,6 +200,75 @@ const extractMscxHarmonies = (mscx: string): MscxHarmony[] => {
     .filter((harmony): harmony is MscxHarmony => Boolean(harmony?.root))
 }
 
+const extractMscxChordPlayback = (mscx: string): MscxChordPlayback[] => {
+  const doc = new DOMParser().parseFromString(mscx, 'application/xml')
+  if (doc.querySelector('parsererror')) return []
+
+  return Array.from(doc.querySelectorAll('Chord')).map((chord) => {
+    const subtype = getDirectChild(chord, 'TremoloSingleChord')?.querySelector(
+      ':scope > subtype'
+    )?.textContent
+    const denominator = Number(subtype?.match(/^r(\d+)$/)?.[1])
+    const tremoloMarks = Math.log2(denominator) - 2
+
+    return {
+      tremoloMarks:
+        Number.isInteger(tremoloMarks) && tremoloMarks >= 1
+          ? tremoloMarks
+          : null,
+    }
+  })
+}
+
+const addTremoloNotation = (noteXml: string, marks: number): string => {
+  const tremolo = `<tremolo type="single">${marks}</tremolo>`
+
+  if (/<ornaments\b/.test(noteXml)) {
+    return noteXml.replace(/<\/ornaments>/, `${tremolo}</ornaments>`)
+  }
+  if (/<notations\b/.test(noteXml)) {
+    return noteXml.replace(
+      /<\/notations>/,
+      `<ornaments>${tremolo}</ornaments></notations>`
+    )
+  }
+
+  const notation = `<notations><ornaments>${tremolo}</ornaments></notations>`
+  return /<(lyric|play|listen)\b/.test(noteXml)
+    ? noteXml.replace(/<(lyric|play|listen)\b/, `${notation}<$1`)
+    : noteXml.replace(/<\/note>/, `${notation}</note>`)
+}
+
+const restoreTremolos = (
+  musicXml: string,
+  chordPlayback: MscxChordPlayback[]
+): string => {
+  if (!chordPlayback.some(({ tremoloMarks }) => tremoloMarks !== null)) {
+    return musicXml
+  }
+
+  const playableNotes = musicXml
+    .match(NOTE_TAG_PATTERN)
+    ?.filter((note) => !/<rest\b/.test(note) && !/<chord\s*\/?\s*>/.test(note))
+  if (!playableNotes || playableNotes.length !== chordPlayback.length) {
+    console.warn('Chord数が一致しないためロール補正をスキップしました', {
+      musicXmlChordCount: playableNotes?.length ?? 0,
+      mscxChordCount: chordPlayback.length,
+    })
+    return musicXml
+  }
+
+  let chordIndex = 0
+  return musicXml.replace(NOTE_TAG_PATTERN, (note) => {
+    if (/<rest\b/.test(note) || /<chord\s*\/?\s*>/.test(note)) return note
+
+    const tremoloMarks = chordPlayback[chordIndex++]?.tremoloMarks
+    return tremoloMarks === null || tremoloMarks === undefined
+      ? note
+      : addTremoloNotation(note, tremoloMarks)
+  })
+}
+
 const addPitchXml = (
   lines: string[],
   tagName: 'root' | 'bass',
@@ -242,9 +316,11 @@ const restoreHarmonyFromMscz = async (
   }
 
   const harmonies = extractMscxHarmonies(mscx)
+  const chordPlayback = extractMscxChordPlayback(mscx)
+  const musicXmlWithTremolos = restoreTremolos(musicXml, chordPlayback)
   if (!harmonies.length) {
     return {
-      musicXml,
+      musicXml: musicXmlWithTremolos,
     }
   }
 
@@ -255,13 +331,13 @@ const restoreHarmonyFromMscz = async (
       mscxHarmonyCount: harmonies.length,
     })
     return {
-      musicXml,
+      musicXml: musicXmlWithTremolos,
     }
   }
 
   let harmonyIndex = 0
   return {
-    musicXml: musicXml.replace(HARMONY_TAG_PATTERN, () =>
+    musicXml: musicXmlWithTremolos.replace(HARMONY_TAG_PATTERN, () =>
       buildHarmonyXml(harmonies[harmonyIndex++])
     ),
   }
