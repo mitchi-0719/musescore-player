@@ -5,14 +5,14 @@ import { useScoreStore } from '../stores/useScoreStore'
 export default function PlayerControls() {
   const player = useScoreStore((s) => s.player)
   const currentTime = useScoreStore((s) => s.currentTime)
-  const tempo = useScoreStore((s) => s.tempo)
+  const tempoPercentage = useScoreStore((s) => s.tempoPercentage)
   const volume = useScoreStore((s) => s.volume)
   const totalDuration = useScoreStore((s) => s.totalDuration)
-  const setTempo = useScoreStore((s) => s.setTempo)
+  const setTempoPercentage = useScoreStore((s) => s.setTempoPercentage)
   const setVolume = useScoreStore((s) => s.setVolume)
   const setCurrentTime = useScoreStore((s) => s.setCurrentTime)
 
-  const [localTempo, setLocalTempo] = useState(tempo)
+  const [localTempo, setLocalTempo] = useState(tempoPercentage)
   const [seekValue, setSeekValue] = useState(currentTime)
 
   const handlePlay = useCallback(async () => {
@@ -37,10 +37,9 @@ export default function PlayerControls() {
   const handleTempoChange = useCallback(
     (v: number) => {
       setLocalTempo(v)
-      setTempo(v)
-      player?.setTempo(v)
+      setTempoPercentage(v)
     },
-    [player, setTempo]
+    [setTempoPercentage]
   )
 
   const handleVolumeChange = useCallback(
@@ -139,15 +138,16 @@ export default function PlayerControls() {
         <div className="flex flex-1 items-center gap-2">
           <input
             type="range"
-            min={40}
-            max={220}
+            min={25}
+            max={200}
+            step={5}
             value={localTempo}
             aria-label="テンポ"
             onChange={(e) => handleTempoChange(Number(e.target.value))}
             className="flex-1"
           />
           <div className="min-w-12 text-right text-xs sm:text-sm">
-            {localTempo} BPM
+            {localTempo}%
           </div>
         </div>
       </div>

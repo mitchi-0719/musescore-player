@@ -61,8 +61,49 @@ export const ControlModal: FC<ControlModalProps> = ({
       </div>
 
       <div className="h-40 w-full overflow-y-auto px-4 py-3">
+        <TempoControl />
         <MixerPanel mixerControls={mixerControls} />
       </div>
+    </div>
+  )
+}
+
+const TempoControl = () => {
+  const tempoPercentage = useScoreStore((state) => state.tempoPercentage)
+  const setTempoPercentage = useScoreStore((state) => state.setTempoPercentage)
+  const decreaseTempo = () =>
+    setTempoPercentage(Math.max(25, tempoPercentage - 5))
+  const increaseTempo = () =>
+    setTempoPercentage(Math.min(200, tempoPercentage + 5))
+
+  return (
+    <div className="mb-3 flex items-center gap-2 border-b border-gray-200 pb-3">
+      <span className="mr-1 text-xs text-gray-700">テンポ</span>
+      <button
+        type="button"
+        onClick={decreaseTempo}
+        disabled={tempoPercentage <= 25}
+        className="flex h-8 w-8 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+        aria-label="テンポを5%下げる"
+      >
+        <Icon name="remove" size="small" />
+      </button>
+      <output
+        className="flex w-12 items-center justify-center text-center text-xs font-medium text-gray-700 tabular-nums"
+        aria-label={`現在のテンポ: ${tempoPercentage}%`}
+        aria-live="polite"
+      >
+        {tempoPercentage}%
+      </output>
+      <button
+        type="button"
+        onClick={increaseTempo}
+        disabled={tempoPercentage >= 200}
+        className="flex h-8 w-8 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+        aria-label="テンポを5%上げる"
+      >
+        <Icon name="add" size="small" />
+      </button>
     </div>
   )
 }

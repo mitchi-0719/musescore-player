@@ -270,10 +270,12 @@ export const useAudioPlayer = (
   const metronomeChannelRef = useRef<ToneModule.Channel | null>(null)
   const metronomeLoopRef = useRef<ToneModule.Loop | null>(null)
   const isPlaying = useScoreStore((state) => state.isPlaying)
+  const tempoPercentage = useScoreStore((state) => state.tempoPercentage)
   const setIsPlaying = useScoreStore((state) => state.setIsPlaying)
   const setStoreVolume = useScoreStore((state) => state.setVolume)
   const partRef = useRef<ToneModule.Part | null>(null)
   const tempoScheduleIdsRef = useRef<number[]>([])
+  const tempoMultiplierRef = useRef(tempoPercentage / 100)
   const onNoteStartRef = useRef(options.onNoteStart)
   const onPlaybackStartRef = useRef(options.onPlaybackStart)
   const onPlaybackStopRef = useRef(options.onPlaybackStop)
@@ -292,18 +294,31 @@ export const useAudioPlayer = (
     parts: {},
   })
   const mixerStateRef = useRef(mixerState)
+  const [toneReady, setToneReady] = useState(false)
 
   useEffect(() => {
     mixerStateRef.current = mixerState
   }, [mixerState])
 
   useEffect(() => {
+    tempoMultiplierRef.current = tempoPercentage / 100
+
+    if (!toneReady || !_toneModule) return
+
+    const transport = _toneModule.getTransport()
+    const currentTicks = Number(transport.ticks)
+    const activeTempo = (options.tempoChanges ?? []).reduce(
+      (bpm, change) => (change.time <= currentTicks ? change.bpm : bpm),
+      options.tempoChanges?.[0]?.bpm ?? 120
+    )
+    transport.bpm.value = activeTempo * tempoMultiplierRef.current
+  }, [options.tempoChanges, tempoPercentage, toneReady])
+
+  useEffect(() => {
     onNoteStartRef.current = options.onNoteStart
     onPlaybackStartRef.current = options.onPlaybackStart
     onPlaybackStopRef.current = options.onPlaybackStop
   }, [options.onNoteStart, options.onPlaybackStart, options.onPlaybackStop])
-
-  const [toneReady, setToneReady] = useState(false)
 
   // Tone.js の遅延ロード：parsedEvents が存在したら初めてロードする
   useEffect(() => {
@@ -639,10 +654,14 @@ export const useAudioPlayer = (
     tempoScheduleIdsRef.current = []
 
     const tempoChanges = options.tempoChanges ?? []
-    transport.bpm.value = tempoChanges[0]?.bpm ?? 120
+    transport.bpm.value =
+      (tempoChanges[0]?.bpm ?? 120) * tempoMultiplierRef.current
     tempoChanges.slice(1).forEach((change) => {
       const id = transport.schedule((time) => {
-        transport.bpm.setValueAtTime(change.bpm, time)
+        transport.bpm.setValueAtTime(
+          change.bpm * tempoMultiplierRef.current,
+          time
+        )
       }, `${change.time}i`)
       tempoScheduleIdsRef.current.push(id)
     })
@@ -823,7 +842,7 @@ export const useAudioPlayer = (
         (bpm, change) => (change.time <= startTicks ? change.bpm : bpm),
         options.tempoChanges?.[0]?.bpm ?? 120
       )
-      Tone.getTransport().bpm.value = activeTempo
+      Tone.getTransport().bpm.value = activeTempo * tempoMultiplierRef.current
       onPlaybackStartRef.current?.(startTicks)
       metronomeLoopRef.current?.start(0)
       Tone.getTransport().start(undefined, `${startTicks}i`)

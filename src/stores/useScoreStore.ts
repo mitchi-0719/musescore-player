@@ -47,7 +47,7 @@ export interface ScoreState {
   player: PlayerHandle | null
   isPlaying: boolean
   currentTime: number
-  tempo: number
+  tempoPercentage: number
   volume: number
 
   // ハイライト状態
@@ -70,7 +70,7 @@ export interface ScoreState {
   setPlayer: (p: PlayerHandle | null) => void
   setIsPlaying: (v: boolean) => void
   setCurrentTime: (t: number) => void
-  setTempo: (bpm: number) => void
+  setTempoPercentage: (percentage: number) => void
   setVolume: (v: number) => void
   setHighlightedMeasure: (measureNumber: number | null) => void
   setHighlightedNote: (time: number | null) => void
@@ -94,7 +94,7 @@ export const useScoreStore = create<ScoreState>((set) => ({
   player: null,
   isPlaying: false,
   currentTime: 0,
-  tempo: 120,
+  tempoPercentage: 100,
   volume: 1,
 
   // highlight state
@@ -133,7 +133,7 @@ export const useScoreStore = create<ScoreState>((set) => ({
       player: null,
       isPlaying: false,
       currentTime: 0,
-      tempo: 120,
+      tempoPercentage: 100,
       volume: 1,
       highlightedMeasureNumber: null,
       highlightedNoteTime: null,
@@ -149,8 +149,12 @@ export const useScoreStore = create<ScoreState>((set) => ({
     set((state) =>
       Math.abs(state.currentTime - t) < 0.01 ? state : { currentTime: t }
     ),
-  setTempo: (bpm) =>
-    set((state) => (state.tempo === bpm ? state : { tempo: bpm })),
+  setTempoPercentage: (percentage) =>
+    set((state) =>
+      state.tempoPercentage === percentage
+        ? state
+        : { tempoPercentage: percentage }
+    ),
   setVolume: (v) =>
     set((state) => (state.volume === v ? state : { volume: v })),
   setHighlightedMeasure: (measureNumber) =>
