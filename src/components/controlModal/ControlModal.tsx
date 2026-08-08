@@ -84,19 +84,21 @@ const formatTime = (time: number) => {
 const PlaybackPositionControl: FC<{
   playbackControls: AudioPlaybackControls
 }> = ({ playbackControls }) => {
-  const [sliderTime, setSliderTime] = useState(playbackControls.currentTime)
-  const sliderTimeRef = useRef(playbackControls.currentTime)
+  const currentTime = useScoreStore((state) => state.currentTime)
+  const totalDuration = useScoreStore((state) => state.totalDuration)
+  const [sliderTime, setSliderTime] = useState(currentTime)
+  const sliderTimeRef = useRef(currentTime)
   const isDraggingRef = useRef(false)
   const hasPendingSeekRef = useRef(false)
   const lastCommittedTimeRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!isDraggingRef.current && !hasPendingSeekRef.current) {
-      sliderTimeRef.current = playbackControls.currentTime
-      lastCommittedTimeRef.current = playbackControls.currentTime
-      setSliderTime(playbackControls.currentTime)
+      sliderTimeRef.current = currentTime
+      lastCommittedTimeRef.current = currentTime
+      setSliderTime(currentTime)
     }
-  }, [playbackControls.currentTime])
+  }, [currentTime])
 
   const updateSlider = (time: number) => {
     sliderTimeRef.current = time
@@ -128,10 +130,10 @@ const PlaybackPositionControl: FC<{
       <input
         type="range"
         min={0}
-        max={playbackControls.totalDuration || 1}
+        max={totalDuration || 1}
         step={0.1}
         value={sliderTime}
-        disabled={playbackControls.totalDuration === 0}
+        disabled={totalDuration === 0}
         className="min-w-36 flex-1 disabled:opacity-40"
         aria-label="再生位置"
         onPointerDown={() => {
@@ -152,7 +154,7 @@ const PlaybackPositionControl: FC<{
         className="shrink-0 text-xs text-gray-700 tabular-nums"
         aria-live="off"
       >
-        {formatTime(sliderTime)}/{formatTime(playbackControls.totalDuration)}
+        {formatTime(sliderTime)}/{formatTime(totalDuration)}
       </output>
     </div>
   )

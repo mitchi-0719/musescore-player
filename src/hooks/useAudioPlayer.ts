@@ -16,8 +16,6 @@ type AudioPlayerOptions = {
 }
 
 export type AudioPlaybackControls = {
-  currentTime: number
-  totalDuration: number
   seek: (time: number) => void
 }
 
@@ -338,6 +336,8 @@ export const useAudioPlayer = (
     (state) => state.highlightedNoteTime
   )
   const setIsPlaying = useScoreStore((state) => state.setIsPlaying)
+  const setCurrentTime = useScoreStore((state) => state.setCurrentTime)
+  const setTotalDuration = useScoreStore((state) => state.setTotalDuration)
   const setHighlightedNote = useScoreStore((state) => state.setHighlightedNote)
   const setStoreVolume = useScoreStore((state) => state.setVolume)
   const partRef = useRef<ToneModule.Part | null>(null)
@@ -364,7 +364,6 @@ export const useAudioPlayer = (
   })
   const mixerStateRef = useRef(mixerState)
   const [toneReady, setToneReady] = useState(false)
-  const [currentScoreTime, setCurrentScoreTime] = useState(0)
 
   const scoreTimeline = useMemo(() => {
     const tempoChanges = options.tempoChanges ?? []
@@ -382,6 +381,10 @@ export const useAudioPlayer = (
   useEffect(() => {
     mixerStateRef.current = mixerState
   }, [mixerState])
+
+  useEffect(() => {
+    setTotalDuration(scoreTimeline.totalDuration)
+  }, [scoreTimeline.totalDuration, setTotalDuration])
 
   useEffect(() => {
     // 停止中に楽譜上の音符を選んだ場合も、次回の開始位置へ反映する。
@@ -419,33 +422,32 @@ export const useAudioPlayer = (
   useEffect(() => {
     if (!isPlaying || !toneReady || !_toneModule) return
 
-    let animationFrameId = 0
-    let lastUpdateTime = 0
-    const updatePosition = (timestamp: number) => {
-      if (timestamp - lastUpdateTime < 100) {
-        animationFrameId = requestAnimationFrame(updatePosition)
-        return
-      }
-      lastUpdateTime = timestamp
+    const updatePosition = () => {
       const ticks = Math.min(
         scoreTimeline.totalTicks,
         Number(_toneModule!.getTransport().ticks)
       )
       playbackPositionTicksRef.current = ticks
       const scoreTime = ticksToScoreSeconds(ticks, scoreTimeline.tempoChanges)
-      setCurrentScoreTime(scoreTime)
+      setCurrentTime(scoreTime)
 
       if (scoreTimeline.totalTicks > 0 && ticks >= scoreTimeline.totalTicks) {
         setHighlightedNote(scoreTimeline.totalTicks)
         setIsPlaying(false)
         return
       }
-      animationFrameId = requestAnimationFrame(updatePosition)
     }
-    animationFrameId = requestAnimationFrame(updatePosition)
+    const intervalId = window.setInterval(updatePosition, 100)
 
-    return () => cancelAnimationFrame(animationFrameId)
-  }, [isPlaying, scoreTimeline, setHighlightedNote, setIsPlaying, toneReady])
+    return () => window.clearInterval(intervalId)
+  }, [
+    isPlaying,
+    scoreTimeline,
+    setCurrentTime,
+    setHighlightedNote,
+    setIsPlaying,
+    toneReady,
+  ])
 
   // Tone.js の遅延ロード：parsedEvents が存在したら初めてロードする
   useEffect(() => {
@@ -1032,7 +1034,7 @@ export const useAudioPlayer = (
           Math.max(0, Number(transport.ticks))
         )
         playbackPositionTicksRef.current = stoppedTicks
-        setCurrentScoreTime(
+        setCurrentTime(
           ticksToScoreSeconds(stoppedTicks, scoreTimeline.tempoChanges)
         )
         setHighlightedNote(stoppedTicks)
@@ -1044,7 +1046,7 @@ export const useAudioPlayer = (
       }
     }
     setIsPlaying(false)
-  }, [scoreTimeline, setHighlightedNote, setIsPlaying])
+  }, [scoreTimeline, setCurrentTime, setHighlightedNote, setIsPlaying])
 
   const seek = useCallback(
     (time: number) => {
@@ -1057,7 +1059,7 @@ export const useAudioPlayer = (
         scoreSecondsToTicks(clampedTime, scoreTimeline.tempoChanges)
       )
       playbackPositionTicksRef.current = ticks
-      setCurrentScoreTime(clampedTime)
+      setCurrentTime(clampedTime)
       setHighlightedNote(ticks)
       debugPlaybackPosition('seek-committed', {
         scoreTime: clampedTime,
@@ -1083,7 +1085,7 @@ export const useAudioPlayer = (
         transport.bpm.value = activeTempo * tempoMultiplierRef.current
       }
     },
-    [scoreTimeline, setHighlightedNote]
+    [scoreTimeline, setCurrentTime, setHighlightedNote]
   )
 
   const playNote: PlayNoteFn = useCallback(
@@ -1315,8 +1317,6 @@ export const useAudioPlayer = (
   )
 
   const playbackControls: AudioPlaybackControls = {
-    currentTime: currentScoreTime,
-    totalDuration: scoreTimeline.totalDuration,
     seek,
   }
 
