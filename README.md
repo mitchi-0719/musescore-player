@@ -67,6 +67,14 @@ npm run dev
 
 起動後、表示された URL（通常 `http://localhost:5173`）を開いてください。
 
+production用の環境変数で開発サーバーを起動する場合は、次を実行します。
+
+```bash
+npm run dev:production
+```
+
+これはproduction用の環境変数やFeature Flagをローカルで確認するためのコマンドです。本番ビルドそのものを確認するときは、`npm run build`の後に`npm run preview`を実行してください。
+
 ### 4. Feature Flag
 
 公開前の機能は `src/config/featureFlags.ts` で管理します。`VITE_FEATURE_*` 環境変数は、値が文字列の `true` の場合だけ有効になり、未設定を含むそれ以外の値では無効になります。
