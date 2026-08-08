@@ -7,7 +7,7 @@ import type {
 import { useOnOffState } from '../../hooks/useOnOffState'
 import { useScoreStore } from '../../stores/useScoreStore'
 import { Icon } from '../ui/Icon'
-import { MixerPanel } from './MixerPanel'
+import { MixerPanel, type ScoreVisibilityControls } from './MixerPanel'
 
 type ControlModalProps = {
   play: () => void
@@ -18,6 +18,7 @@ type ControlModalProps = {
   zoomOut: () => void
   zoomPercentage: number
   isZoomRendering: boolean
+  visibilityControls: ScoreVisibilityControls
 }
 
 export const ControlModal: FC<ControlModalProps> = ({
@@ -29,6 +30,7 @@ export const ControlModal: FC<ControlModalProps> = ({
   zoomOut,
   zoomPercentage,
   isZoomRendering,
+  visibilityControls,
 }) => {
   const { state: isOpen, toggle: toggleDrawer } = useOnOffState(false)
 
@@ -69,8 +71,11 @@ export const ControlModal: FC<ControlModalProps> = ({
               ミキサー
             </span>
           </div>
-          <div className="max-h-58 overflow-auto px-4 py-3 pb-[max(14px,env(safe-area-inset-bottom))]">
-            <MixerPanel mixerControls={mixerControls} />
+          <div className="overflow-x-auto overflow-y-hidden px-4 py-3 pb-[max(14px,env(safe-area-inset-bottom))]">
+            <MixerPanel
+              mixerControls={mixerControls}
+              visibilityControls={visibilityControls}
+            />
           </div>
         </div>
       </div>
