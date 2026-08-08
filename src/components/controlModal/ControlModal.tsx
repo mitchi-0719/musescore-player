@@ -1,6 +1,9 @@
-import { type FC } from 'react'
+import { type FC, useEffect, useRef, useState } from 'react'
 
-import type { AudioMixerControls } from '../../hooks/useAudioPlayer'
+import type {
+  AudioMixerControls,
+  AudioPlaybackControls,
+} from '../../hooks/useAudioPlayer'
 import { useOnOffState } from '../../hooks/useOnOffState'
 import { useScoreStore } from '../../stores/useScoreStore'
 import { Icon } from '../ui/Icon'
@@ -10,6 +13,7 @@ type ControlModalProps = {
   play: () => void
   stop: () => void
   mixerControls: AudioMixerControls
+  playbackControls: AudioPlaybackControls
   zoomIn: () => void
   zoomOut: () => void
   zoomPercentage: number
@@ -20,6 +24,7 @@ export const ControlModal: FC<ControlModalProps> = ({
   play,
   stop,
   mixerControls,
+  playbackControls,
   zoomIn,
   zoomOut,
   zoomPercentage,
@@ -61,8 +66,136 @@ export const ControlModal: FC<ControlModalProps> = ({
       </div>
 
       <div className="h-40 w-full overflow-y-auto px-4 py-3">
+        <PlaybackPositionControl playbackControls={playbackControls} />
+        <TempoControl />
         <MixerPanel mixerControls={mixerControls} />
       </div>
+    </div>
+  )
+}
+
+const formatTime = (time: number) => {
+  const wholeSeconds = Math.max(0, Math.floor(time))
+  const minutes = Math.floor(wholeSeconds / 60)
+  const seconds = wholeSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+const PlaybackPositionControl: FC<{
+  playbackControls: AudioPlaybackControls
+}> = ({ playbackControls }) => {
+  const currentTime = useScoreStore((state) => state.currentTime)
+  const totalDuration = useScoreStore((state) => state.totalDuration)
+  const [sliderTime, setSliderTime] = useState(currentTime)
+  const sliderTimeRef = useRef(currentTime)
+  const hasPendingSeekRef = useRef(false)
+  const lastCommittedTimeRef = useRef<number | null>(null)
+  const seekCommitTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!hasPendingSeekRef.current) {
+      sliderTimeRef.current = currentTime
+      lastCommittedTimeRef.current = currentTime
+      setSliderTime(currentTime)
+    }
+  }, [currentTime])
+
+  useEffect(
+    () => () => {
+      if (seekCommitTimerRef.current !== null) {
+        window.clearTimeout(seekCommitTimerRef.current)
+      }
+    },
+    []
+  )
+
+  const commitSeek = () => {
+    if (seekCommitTimerRef.current !== null) {
+      window.clearTimeout(seekCommitTimerRef.current)
+      seekCommitTimerRef.current = null
+    }
+    if (!hasPendingSeekRef.current) return
+
+    const finalTime = sliderTimeRef.current
+    hasPendingSeekRef.current = false
+    if (lastCommittedTimeRef.current !== finalTime) {
+      lastCommittedTimeRef.current = finalTime
+      playbackControls.seek(finalTime)
+    }
+  }
+
+  const updateSlider = (time: number) => {
+    sliderTimeRef.current = time
+    setSliderTime(time)
+    hasPendingSeekRef.current = true
+
+    if (seekCommitTimerRef.current !== null) {
+      window.clearTimeout(seekCommitTimerRef.current)
+    }
+    seekCommitTimerRef.current = window.setTimeout(commitSeek, 150)
+  }
+
+  return (
+    <div className="mb-3 flex items-center gap-3 border-b border-gray-200 pb-3">
+      <input
+        type="range"
+        min={0}
+        max={totalDuration || 1}
+        step={0.1}
+        value={sliderTime}
+        disabled={totalDuration === 0}
+        className="min-w-36 flex-1 disabled:opacity-40"
+        aria-label="再生位置"
+        onChange={(event) => updateSlider(Number(event.target.value))}
+        onKeyUp={commitSeek}
+        onBlur={commitSeek}
+      />
+      <output
+        className="shrink-0 text-xs text-gray-700 tabular-nums"
+        aria-live="off"
+      >
+        {formatTime(sliderTime)}/{formatTime(totalDuration)}
+      </output>
+    </div>
+  )
+}
+
+const TempoControl = () => {
+  const tempoPercentage = useScoreStore((state) => state.tempoPercentage)
+  const setTempoPercentage = useScoreStore((state) => state.setTempoPercentage)
+  const decreaseTempo = () =>
+    setTempoPercentage(Math.max(25, tempoPercentage - 5))
+  const increaseTempo = () =>
+    setTempoPercentage(Math.min(200, tempoPercentage + 5))
+
+  return (
+    <div className="mb-3 flex items-center gap-2 border-b border-gray-200 pb-3">
+      <span className="mr-1 text-xs text-gray-700">テンポ</span>
+      <button
+        type="button"
+        onClick={decreaseTempo}
+        disabled={tempoPercentage <= 25}
+        className="flex h-8 w-8 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+        aria-label="テンポを5%下げる"
+      >
+        <Icon name="remove" size="small" />
+      </button>
+      <output
+        className="flex w-12 items-center justify-center text-center text-xs font-medium text-gray-700 tabular-nums"
+        aria-label={`現在のテンポ: ${tempoPercentage}%`}
+        aria-live="polite"
+      >
+        {tempoPercentage}%
+      </output>
+      <button
+        type="button"
+        onClick={increaseTempo}
+        disabled={tempoPercentage >= 200}
+        className="flex h-8 w-8 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+        aria-label="テンポを5%上げる"
+      >
+        <Icon name="add" size="small" />
+      </button>
     </div>
   )
 }
