@@ -12,6 +12,13 @@ type AudioPlayerOptions = {
   onNoteStart?: (event: NoteEvent) => void
   onPlaybackStart?: (startTicks: number) => void
   onPlaybackStop?: () => void
+  onSeek?: (ticks: number) => void
+}
+
+export type AudioPlaybackControls = {
+  currentTime: number
+  totalDuration: number
+  seek: (time: number) => void
 }
 
 export type AudioPartControl = {
@@ -121,6 +128,62 @@ const DRUM_VOLUME_MULTIPLIER = 0.5
 const DRUM_ROLL_VOLUME_MULTIPLIER = 0.2
 const REFERENCE_DYNAMIC_VELOCITY = 80
 const DYNAMIC_GAIN_EXPONENT = 2
+
+const debugPlaybackPosition = (
+  event: string,
+  values: Record<string, number | string | null>
+) => {
+  if (import.meta.env.DEV) {
+    console.debug(`[playback-position] ${JSON.stringify({ event, ...values })}`)
+  }
+}
+
+const ticksToScoreSeconds = (ticks: number, tempoChanges: TempoChange[]) => {
+  const changes = tempoChanges.length ? tempoChanges : [{ time: 0, bpm: 120 }]
+  let seconds = 0
+  let previousTicks = 0
+  let bpm = changes[0]?.bpm ?? 120
+
+  for (const change of changes) {
+    if (change.time <= previousTicks) {
+      bpm = change.bpm
+      continue
+    }
+    if (change.time >= ticks) break
+    seconds += ((change.time - previousTicks) / TICKS_PER_QUARTER) * (60 / bpm)
+    previousTicks = change.time
+    bpm = change.bpm
+  }
+
+  return (
+    seconds +
+    (Math.max(0, ticks - previousTicks) / TICKS_PER_QUARTER) * (60 / bpm)
+  )
+}
+
+const scoreSecondsToTicks = (seconds: number, tempoChanges: TempoChange[]) => {
+  const changes = tempoChanges.length ? tempoChanges : [{ time: 0, bpm: 120 }]
+  let remainingSeconds = Math.max(0, seconds)
+  let previousTicks = 0
+  let bpm = changes[0]?.bpm ?? 120
+
+  for (const change of changes) {
+    if (change.time <= previousTicks) {
+      bpm = change.bpm
+      continue
+    }
+    const segmentSeconds =
+      ((change.time - previousTicks) / TICKS_PER_QUARTER) * (60 / bpm)
+    if (remainingSeconds <= segmentSeconds) {
+      return previousTicks + (remainingSeconds * bpm * TICKS_PER_QUARTER) / 60
+    }
+    remainingSeconds -= segmentSeconds
+    previousTicks = change.time
+    bpm = change.bpm
+  }
+
+  return previousTicks + (remainingSeconds * bpm * TICKS_PER_QUARTER) / 60
+}
 const clampVolume = (volume: number) =>
   Math.min(MAX_VOLUME, Math.max(0, volume))
 const mixerValueToDecibels = (volume: number, maxBoostDb: number) => {
@@ -271,14 +334,20 @@ export const useAudioPlayer = (
   const metronomeLoopRef = useRef<ToneModule.Loop | null>(null)
   const isPlaying = useScoreStore((state) => state.isPlaying)
   const tempoPercentage = useScoreStore((state) => state.tempoPercentage)
+  const highlightedNoteTime = useScoreStore(
+    (state) => state.highlightedNoteTime
+  )
   const setIsPlaying = useScoreStore((state) => state.setIsPlaying)
+  const setHighlightedNote = useScoreStore((state) => state.setHighlightedNote)
   const setStoreVolume = useScoreStore((state) => state.setVolume)
   const partRef = useRef<ToneModule.Part | null>(null)
   const tempoScheduleIdsRef = useRef<number[]>([])
   const tempoMultiplierRef = useRef(tempoPercentage / 100)
+  const playbackPositionTicksRef = useRef(highlightedNoteTime ?? 0)
   const onNoteStartRef = useRef(options.onNoteStart)
   const onPlaybackStartRef = useRef(options.onPlaybackStart)
   const onPlaybackStopRef = useRef(options.onPlaybackStop)
+  const onSeekRef = useRef(options.onSeek)
   const hasObservedPlaybackStateRef = useRef(false)
   const activePartIdsRef = useRef<Set<string>>(new Set())
   const measureStartTicksRef = useRef<Set<number>>(new Set())
@@ -295,10 +364,31 @@ export const useAudioPlayer = (
   })
   const mixerStateRef = useRef(mixerState)
   const [toneReady, setToneReady] = useState(false)
+  const [currentScoreTime, setCurrentScoreTime] = useState(0)
+
+  const scoreTimeline = useMemo(() => {
+    const tempoChanges = options.tempoChanges ?? []
+    const totalTicks = parsedEvents.reduce(
+      (latest, event) => Math.max(latest, event.time + event.duration),
+      0
+    )
+    return {
+      tempoChanges,
+      totalTicks,
+      totalDuration: ticksToScoreSeconds(totalTicks, tempoChanges),
+    }
+  }, [options.tempoChanges, parsedEvents])
 
   useEffect(() => {
     mixerStateRef.current = mixerState
   }, [mixerState])
+
+  useEffect(() => {
+    // 停止中に楽譜上の音符を選んだ場合も、次回の開始位置へ反映する。
+    if (!isPlaying && highlightedNoteTime !== null) {
+      playbackPositionTicksRef.current = highlightedNoteTime
+    }
+  }, [highlightedNoteTime, isPlaying])
 
   useEffect(() => {
     tempoMultiplierRef.current = tempoPercentage / 100
@@ -318,7 +408,39 @@ export const useAudioPlayer = (
     onNoteStartRef.current = options.onNoteStart
     onPlaybackStartRef.current = options.onPlaybackStart
     onPlaybackStopRef.current = options.onPlaybackStop
-  }, [options.onNoteStart, options.onPlaybackStart, options.onPlaybackStop])
+    onSeekRef.current = options.onSeek
+  }, [
+    options.onNoteStart,
+    options.onPlaybackStart,
+    options.onPlaybackStop,
+    options.onSeek,
+  ])
+
+  useEffect(() => {
+    if (!isPlaying || !toneReady || !_toneModule) return
+
+    let animationFrameId = 0
+    let lastUpdateTime = 0
+    const updatePosition = (timestamp: number) => {
+      if (timestamp - lastUpdateTime < 100) {
+        animationFrameId = requestAnimationFrame(updatePosition)
+        return
+      }
+      lastUpdateTime = timestamp
+      const ticks = Math.min(
+        scoreTimeline.totalTicks,
+        Number(_toneModule!.getTransport().ticks)
+      )
+      playbackPositionTicksRef.current = ticks
+      setCurrentScoreTime(
+        ticksToScoreSeconds(ticks, scoreTimeline.tempoChanges)
+      )
+      animationFrameId = requestAnimationFrame(updatePosition)
+    }
+    animationFrameId = requestAnimationFrame(updatePosition)
+
+    return () => cancelAnimationFrame(animationFrameId)
+  }, [isPlaying, scoreTimeline, toneReady])
 
   // Tone.js の遅延ロード：parsedEvents が存在したら初めてロードする
   useEffect(() => {
@@ -834,18 +956,41 @@ export const useAudioPlayer = (
     if (!toneReady) return
     const Tone = _toneModule!
     if (isPlaying) {
-      const startTicks = Math.max(
-        0,
-        useScoreStore.getState().highlightedNoteTime ?? 0
-      )
+      const startTicks = Math.max(0, playbackPositionTicksRef.current)
+      const transport = Tone.getTransport()
       const activeTempo = (options.tempoChanges ?? []).reduce(
         (bpm, change) => (change.time <= startTicks ? change.bpm : bpm),
         options.tempoChanges?.[0]?.bpm ?? 120
       )
-      Tone.getTransport().bpm.value = activeTempo * tempoMultiplierRef.current
+      transport.bpm.value = activeTempo * tempoMultiplierRef.current
+      debugPlaybackPosition('start-requested', {
+        startTicks,
+        storedTicks: playbackPositionTicksRef.current,
+        highlightedTicks: useScoreStore.getState().highlightedNoteTime,
+        transportTicks: Number(transport.ticks),
+        transportState: transport.state,
+      })
       onPlaybackStartRef.current?.(startTicks)
       metronomeLoopRef.current?.start(0)
-      Tone.getTransport().start(undefined, `${startTicks}i`)
+      // 前回停止時の内部タイムラインが残っていても、開始offsetを必ず適用する。
+      if (transport.state !== 'stopped') transport.stop()
+      transport.start(undefined, `${startTicks}i`)
+      requestAnimationFrame(() => {
+        const appliedTicks = Number(transport.ticks)
+        const maximumExpectedAdvance = TICKS_PER_QUARTER / 4
+        if (Math.abs(appliedTicks - startTicks) > maximumExpectedAdvance) {
+          console.warn('[playback-position] correcting start position', {
+            requestedTicks: startTicks,
+            appliedTicks,
+          })
+          transport.ticks = startTicks
+        }
+        debugPlaybackPosition('start-applied', {
+          requestedTicks: startTicks,
+          transportTicks: Number(transport.ticks),
+          transportState: transport.state,
+        })
+      })
     } else {
       Tone.getDraw().cancel()
       Tone.getTransport().stop()
@@ -876,6 +1021,46 @@ export const useAudioPlayer = (
   const stop = useCallback(() => {
     setIsPlaying(false)
   }, [setIsPlaying])
+
+  const seek = useCallback(
+    (time: number) => {
+      const clampedTime = Math.min(
+        scoreTimeline.totalDuration,
+        Math.max(0, time)
+      )
+      const ticks = Math.min(
+        scoreTimeline.totalTicks,
+        scoreSecondsToTicks(clampedTime, scoreTimeline.tempoChanges)
+      )
+      playbackPositionTicksRef.current = ticks
+      setCurrentScoreTime(clampedTime)
+      setHighlightedNote(ticks)
+      debugPlaybackPosition('seek-committed', {
+        scoreTime: clampedTime,
+        ticks,
+        transportTicks: _toneModule
+          ? Number(_toneModule.getTransport().ticks)
+          : null,
+        transportState: _toneModule?.getTransport().state ?? 'unavailable',
+      })
+      onSeekRef.current?.(ticks)
+      if (_toneModule) {
+        const transport = _toneModule.getTransport()
+        // 停止中は次回の start offset だけで位置を適用する。
+        // 停止済みTransportのticksをここで変更すると、Tone.js内部の
+        // タイムラインと開始offsetが競合して末尾へ移動することがある。
+        if (transport.state === 'started') {
+          transport.ticks = ticks
+        }
+        const activeTempo = scoreTimeline.tempoChanges.reduce(
+          (bpm, change) => (change.time <= ticks ? change.bpm : bpm),
+          scoreTimeline.tempoChanges[0]?.bpm ?? 120
+        )
+        transport.bpm.value = activeTempo * tempoMultiplierRef.current
+      }
+    },
+    [scoreTimeline, setHighlightedNote]
+  )
 
   const playNote: PlayNoteFn = useCallback(
     (samplerId, playbackKey, durationBeats) => {
@@ -1105,7 +1290,13 @@ export const useAudioPlayer = (
     ]
   )
 
-  return { play, stop, playNote, mixerControls }
+  const playbackControls: AudioPlaybackControls = {
+    currentTime: currentScoreTime,
+    totalDuration: scoreTimeline.totalDuration,
+    seek,
+  }
+
+  return { play, stop, playNote, mixerControls, playbackControls }
 }
 
 export type PlayNoteFn = (

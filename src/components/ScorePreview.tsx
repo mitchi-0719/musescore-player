@@ -216,16 +216,18 @@ export const ScorePreview = () => {
     [followPlaybackCursor, osmdRef, syncPlaybackCursor]
   )
 
-  const { play, stop, playNote, mixerControls } = useAudioPlayer(parsedEvents, {
-    tempoChanges,
-    onNoteStart: (event) => syncPlaybackCursor(event.time),
-    onPlaybackStart: startPlaybackCursor,
-    onPlaybackStop: () => {
-      lastCursorEventTimeRef.current = null
-      lastCursorTopRef.current = null
-      osmdRef.current?.cursor?.hide()
-    },
-  })
+  const { play, stop, playNote, mixerControls, playbackControls } =
+    useAudioPlayer(parsedEvents, {
+      tempoChanges,
+      onNoteStart: (event) => syncPlaybackCursor(event.time),
+      onPlaybackStart: startPlaybackCursor,
+      onPlaybackStop: () => {
+        lastCursorEventTimeRef.current = null
+        lastCursorTopRef.current = null
+        osmdRef.current?.cursor?.hide()
+      },
+      onSeek: syncPlaybackCursor,
+    })
 
   const { handlePointerDown, handlePointerUp } = useNoteInteraction(
     containerRef,
@@ -355,6 +357,7 @@ export const ScorePreview = () => {
             play={play}
             stop={stop}
             mixerControls={mixerControls}
+            playbackControls={playbackControls}
             zoomIn={zoomIn}
             zoomOut={zoomOut}
             zoomPercentage={scoreZoomPercentage}

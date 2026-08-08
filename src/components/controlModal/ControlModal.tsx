@@ -1,6 +1,9 @@
-import { type FC } from 'react'
+import { type FC, useEffect, useRef, useState } from 'react'
 
-import type { AudioMixerControls } from '../../hooks/useAudioPlayer'
+import type {
+  AudioMixerControls,
+  AudioPlaybackControls,
+} from '../../hooks/useAudioPlayer'
 import { useOnOffState } from '../../hooks/useOnOffState'
 import { useScoreStore } from '../../stores/useScoreStore'
 import { Icon } from '../ui/Icon'
@@ -10,6 +13,7 @@ type ControlModalProps = {
   play: () => void
   stop: () => void
   mixerControls: AudioMixerControls
+  playbackControls: AudioPlaybackControls
   zoomIn: () => void
   zoomOut: () => void
   zoomPercentage: number
@@ -20,6 +24,7 @@ export const ControlModal: FC<ControlModalProps> = ({
   play,
   stop,
   mixerControls,
+  playbackControls,
   zoomIn,
   zoomOut,
   zoomPercentage,
@@ -61,9 +66,94 @@ export const ControlModal: FC<ControlModalProps> = ({
       </div>
 
       <div className="h-40 w-full overflow-y-auto px-4 py-3">
+        <PlaybackPositionControl playbackControls={playbackControls} />
         <TempoControl />
         <MixerPanel mixerControls={mixerControls} />
       </div>
+    </div>
+  )
+}
+
+const formatTime = (time: number) => {
+  const wholeSeconds = Math.max(0, Math.floor(time))
+  const minutes = Math.floor(wholeSeconds / 60)
+  const seconds = wholeSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+const PlaybackPositionControl: FC<{
+  playbackControls: AudioPlaybackControls
+}> = ({ playbackControls }) => {
+  const [sliderTime, setSliderTime] = useState(playbackControls.currentTime)
+  const sliderTimeRef = useRef(playbackControls.currentTime)
+  const isDraggingRef = useRef(false)
+  const hasPendingSeekRef = useRef(false)
+  const lastCommittedTimeRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!isDraggingRef.current && !hasPendingSeekRef.current) {
+      sliderTimeRef.current = playbackControls.currentTime
+      lastCommittedTimeRef.current = playbackControls.currentTime
+      setSliderTime(playbackControls.currentTime)
+    }
+  }, [playbackControls.currentTime])
+
+  const updateSlider = (time: number) => {
+    sliderTimeRef.current = time
+    setSliderTime(time)
+    if (!isDraggingRef.current) {
+      if (lastCommittedTimeRef.current !== time) {
+        lastCommittedTimeRef.current = time
+        playbackControls.seek(time)
+      }
+      hasPendingSeekRef.current = false
+      return
+    }
+    hasPendingSeekRef.current = true
+  }
+
+  const commitSeek = (finalTime = sliderTimeRef.current) => {
+    isDraggingRef.current = false
+    if (!hasPendingSeekRef.current) return
+
+    sliderTimeRef.current = finalTime
+    setSliderTime(finalTime)
+    hasPendingSeekRef.current = false
+    lastCommittedTimeRef.current = finalTime
+    playbackControls.seek(finalTime)
+  }
+
+  return (
+    <div className="mb-3 flex items-center gap-3 border-b border-gray-200 pb-3">
+      <input
+        type="range"
+        min={0}
+        max={playbackControls.totalDuration || 1}
+        step={0.1}
+        value={sliderTime}
+        disabled={playbackControls.totalDuration === 0}
+        className="min-w-36 flex-1 disabled:opacity-40"
+        aria-label="再生位置"
+        onPointerDown={() => {
+          isDraggingRef.current = true
+        }}
+        onChange={(event) => updateSlider(Number(event.target.value))}
+        onPointerUp={(event) => commitSeek(Number(event.currentTarget.value))}
+        onPointerCancel={(event) =>
+          commitSeek(Number(event.currentTarget.value))
+        }
+        onLostPointerCapture={(event) =>
+          commitSeek(Number(event.currentTarget.value))
+        }
+        onKeyUp={(event) => commitSeek(Number(event.currentTarget.value))}
+        onBlur={(event) => commitSeek(Number(event.currentTarget.value))}
+      />
+      <output
+        className="shrink-0 text-xs text-gray-700 tabular-nums"
+        aria-live="off"
+      >
+        {formatTime(sliderTime)}/{formatTime(playbackControls.totalDuration)}
+      </output>
     </div>
   )
 }
