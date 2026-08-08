@@ -2,6 +2,7 @@ import {
   DRUM_SAMPLE_KEY_BY_LABEL,
   MIDI_UNPITCHED_TO_KEY,
 } from '../constants/drum'
+import { logger } from './logger'
 
 export type SamplerId = 'piano' | 'drum' | 'clap'
 
@@ -662,7 +663,7 @@ export const parseMusicXmlForEvents = async (
   const doc = parser.parseFromString(musicXml, 'application/xml')
 
   if (doc.querySelector('parsererror')) {
-    console.warn('MusicXML の解析に失敗しました')
+    logger.warn('MusicXML の解析に失敗しました')
     return { events: [], tempoChanges: [] }
   }
 

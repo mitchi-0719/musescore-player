@@ -4,6 +4,7 @@ import type * as ToneModule from 'tone'
 
 import { DRUM_MAP, MIDI_UNPITCHED_TO_KEY } from '../constants/drum'
 import { PIANO_MAP } from '../constants/piano'
+import { logger } from '../lib/logger'
 import type { NoteEvent, SamplerId, TempoChange } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
 
@@ -132,7 +133,7 @@ const debugPlaybackPosition = (
   values: Record<string, number | string | null>
 ) => {
   if (import.meta.env.DEV) {
-    console.debug(`[playback-position] ${JSON.stringify({ event, ...values })}`)
+    logger.debug(`[playback-position] ${JSON.stringify({ event, ...values })}`)
   }
 }
 
@@ -458,7 +459,7 @@ export const useAudioPlayer = (
         if (!cancelled) setToneReady(true)
       })
       .catch((error: unknown) => {
-        console.error('Tone.js loading failed:', error)
+        logger.error('Tone.js loading failed:', error)
       })
     return () => {
       cancelled = true
@@ -986,7 +987,7 @@ export const useAudioPlayer = (
         const appliedTicks = Number(transport.ticks)
         const maximumExpectedAdvance = TICKS_PER_QUARTER / 4
         if (Math.abs(appliedTicks - startTicks) > maximumExpectedAdvance) {
-          console.warn('[playback-position] correcting start position', {
+          logger.warn('[playback-position] correcting start position', {
             requestedTicks: startTicks,
             appliedTicks,
           })

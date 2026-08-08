@@ -2,6 +2,7 @@ import { type RefObject, useCallback, useMemo, useRef } from 'react'
 
 import type { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 
+import { logger } from '../lib/logger'
 import type { NoteEvent } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
 import type { PlayNoteFn } from './useAudioPlayer'
@@ -205,7 +206,7 @@ export const useNoteInteraction = (
           partId = sourceNote.ParentStaff.ParentInstrument.IdString
         }
       } catch {
-        console.warn('Could not extract part ID from sourceNote.')
+        logger.warn('Could not extract part ID from sourceNote.')
       }
 
       let voiceId = ''
@@ -214,7 +215,7 @@ export const useNoteInteraction = (
           voiceId = String(sourceNote.ParentVoiceEntry.ParentVoice.VoiceId)
         }
       } catch {
-        console.warn('Could not extract voice ID from sourceNote.')
+        logger.warn('Could not extract voice ID from sourceNote.')
       }
 
       // parsedEventsの中から、クリックした音符に該当するイベントを探す
@@ -264,7 +265,7 @@ export const useNoteInteraction = (
           instrumentName = sourceNote.ParentStaff.ParentInstrument.Name
         }
       } catch {
-        console.warn('Could not extract instrument name, defaulting to piano.')
+        logger.warn('Could not extract instrument name, defaulting to piano.')
       }
 
       const samplerId = bestEvent
@@ -337,7 +338,7 @@ export const useNoteInteraction = (
       // pointerdown 時の座標を使ってノートを検索・再生
       void processNoteClick(downState.clientX, downState.clientY).catch(
         (error: unknown) => {
-          console.error('Note interaction failed:', error)
+          logger.error('Note interaction failed:', error)
         }
       )
     },

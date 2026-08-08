@@ -1,3 +1,5 @@
+import { logger } from './logger'
+
 interface MusicScoreExport {
   musicXml: string
   musicMxl: Uint8Array | null
@@ -176,7 +178,7 @@ const getChordKind = (name: string): ChordKind => {
 
 const findMscxFile = async (fileBinary: Uint8Array): Promise<string | null> => {
   if (fileBinary.byteLength === 0) {
-    console.warn('MSCZバイナリが空のためMSCXを読み込めません')
+    logger.warn('MSCZバイナリが空のためMSCXを読み込めません')
     return null
   }
 
@@ -189,7 +191,7 @@ const findMscxFile = async (fileBinary: Uint8Array): Promise<string | null> => {
 
     return mscxEntry ? await mscxEntry.async('string') : null
   } catch (error) {
-    console.warn('MSCZ内のMSCX読み込みに失敗しました:', error)
+    logger.warn('MSCZ内のMSCX読み込みに失敗しました:', error)
     return null
   }
 }
@@ -267,7 +269,7 @@ const restoreTremolos = (
     .match(NOTE_TAG_PATTERN)
     ?.filter((note) => !/<rest\b/.test(note) && !/<chord\s*\/?\s*>/.test(note))
   if (!playableNotes || playableNotes.length !== chordPlayback.length) {
-    console.warn('Chord数が一致しないためロール補正をスキップしました', {
+    logger.warn('Chord数が一致しないためロール補正をスキップしました', {
       musicXmlChordCount: playableNotes?.length ?? 0,
       mscxChordCount: chordPlayback.length,
     })
@@ -342,7 +344,7 @@ const restoreHarmonyFromMscz = async (
 
   const harmonyMatches = musicXml.match(HARMONY_TAG_PATTERN) ?? []
   if (harmonyMatches.length !== harmonies.length) {
-    console.warn('Harmony数が一致しないためコード補正をスキップしました', {
+    logger.warn('Harmony数が一致しないためコード補正をスキップしました', {
       musicXmlHarmonyCount: harmonyMatches.length,
       mscxHarmonyCount: harmonies.length,
     })
@@ -380,7 +382,7 @@ export const convertMsczToMusicXml = async (
   try {
     musicMxl = await score.saveMxl()
   } catch {
-    console.warn('MXLの生成に失敗しましたが、XMLは生成されました')
+    logger.warn('MXLの生成に失敗しましたが、XMLは生成されました')
   }
 
   return { musicXml, musicMxl }

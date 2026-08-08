@@ -6,4 +6,5 @@ const isEnabled = (value: string | undefined): boolean => value === 'true'
  */
 export const featureFlags = {
   demoButton: isEnabled(import.meta.env.VITE_FEATURE_DEMO_BUTTON),
+  scoreExport: isEnabled(import.meta.env.VITE_FEATURE_SCORE_EXPORT),
 } as const

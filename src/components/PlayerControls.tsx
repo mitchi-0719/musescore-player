@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 
+import { logger } from '../lib/logger'
 import { useScoreStore } from '../stores/useScoreStore'
 
 export default function PlayerControls() {
@@ -19,7 +20,7 @@ export default function PlayerControls() {
     try {
       await player?.play()
     } catch (e) {
-      console.error('Play error:', e)
+      logger.error('Play error:', e)
     }
   }, [player])
 

@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 
 import { App } from './App'
 import './globals.css'
+import { logger } from './lib/logger'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -19,7 +20,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     void navigator.serviceWorker
       .register('/sw.js', { updateViaCache: 'none' })
       .catch((error: unknown) => {
-        console.error('Service Worker registration failed:', error)
+        logger.error('Service Worker registration failed:', error)
       })
   })
 }

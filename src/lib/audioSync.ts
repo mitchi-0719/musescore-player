@@ -3,6 +3,7 @@
  * 再生時刻から楽譜上の小節・ノート情報をマッピングする機能を提供
  */
 import type { MeasureMetadata, NoteMetadata } from '../stores/useScoreStore'
+import { logger } from './logger'
 
 /**
  * MusicXML を解析して小節とノートのメタデータを抽出
@@ -135,7 +136,7 @@ export function extractMeasuresAndNotes(
       totalDuration: globalTime,
     }
   } catch (error) {
-    console.error('Error extracting measures and notes:', error)
+    logger.error('Error extracting measures and notes:', error)
     return { measures: [], notes: [], totalDuration: 0 }
   }
 }
@@ -268,7 +269,7 @@ export function extractHarmonyLabels(musicXml: string): string[] {
       })
       .filter((label) => label.length > 0)
   } catch (error) {
-    console.warn('Failed to extract harmony labels:', error)
+    logger.warn('Failed to extract harmony labels:', error)
     return []
   }
 }
