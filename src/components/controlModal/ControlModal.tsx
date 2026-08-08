@@ -88,41 +88,51 @@ const PlaybackPositionControl: FC<{
   const totalDuration = useScoreStore((state) => state.totalDuration)
   const [sliderTime, setSliderTime] = useState(currentTime)
   const sliderTimeRef = useRef(currentTime)
-  const isDraggingRef = useRef(false)
   const hasPendingSeekRef = useRef(false)
   const lastCommittedTimeRef = useRef<number | null>(null)
+  const seekCommitTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (!isDraggingRef.current && !hasPendingSeekRef.current) {
+    if (!hasPendingSeekRef.current) {
       sliderTimeRef.current = currentTime
       lastCommittedTimeRef.current = currentTime
       setSliderTime(currentTime)
     }
   }, [currentTime])
 
+  useEffect(
+    () => () => {
+      if (seekCommitTimerRef.current !== null) {
+        window.clearTimeout(seekCommitTimerRef.current)
+      }
+    },
+    []
+  )
+
+  const commitSeek = () => {
+    if (seekCommitTimerRef.current !== null) {
+      window.clearTimeout(seekCommitTimerRef.current)
+      seekCommitTimerRef.current = null
+    }
+    if (!hasPendingSeekRef.current) return
+
+    const finalTime = sliderTimeRef.current
+    hasPendingSeekRef.current = false
+    if (lastCommittedTimeRef.current !== finalTime) {
+      lastCommittedTimeRef.current = finalTime
+      playbackControls.seek(finalTime)
+    }
+  }
+
   const updateSlider = (time: number) => {
     sliderTimeRef.current = time
     setSliderTime(time)
-    if (!isDraggingRef.current) {
-      if (lastCommittedTimeRef.current !== time) {
-        lastCommittedTimeRef.current = time
-        playbackControls.seek(time)
-      }
-      hasPendingSeekRef.current = false
-      return
-    }
     hasPendingSeekRef.current = true
-  }
 
-  const commitSeek = (finalTime = sliderTimeRef.current) => {
-    isDraggingRef.current = false
-    if (!hasPendingSeekRef.current) return
-
-    sliderTimeRef.current = finalTime
-    setSliderTime(finalTime)
-    hasPendingSeekRef.current = false
-    lastCommittedTimeRef.current = finalTime
-    playbackControls.seek(finalTime)
+    if (seekCommitTimerRef.current !== null) {
+      window.clearTimeout(seekCommitTimerRef.current)
+    }
+    seekCommitTimerRef.current = window.setTimeout(commitSeek, 150)
   }
 
   return (
@@ -136,19 +146,9 @@ const PlaybackPositionControl: FC<{
         disabled={totalDuration === 0}
         className="min-w-36 flex-1 disabled:opacity-40"
         aria-label="再生位置"
-        onPointerDown={() => {
-          isDraggingRef.current = true
-        }}
         onChange={(event) => updateSlider(Number(event.target.value))}
-        onPointerUp={(event) => commitSeek(Number(event.currentTarget.value))}
-        onPointerCancel={(event) =>
-          commitSeek(Number(event.currentTarget.value))
-        }
-        onLostPointerCapture={(event) =>
-          commitSeek(Number(event.currentTarget.value))
-        }
-        onKeyUp={(event) => commitSeek(Number(event.currentTarget.value))}
-        onBlur={(event) => commitSeek(Number(event.currentTarget.value))}
+        onKeyUp={commitSeek}
+        onBlur={commitSeek}
       />
       <output
         className="shrink-0 text-xs text-gray-700 tabular-nums"
