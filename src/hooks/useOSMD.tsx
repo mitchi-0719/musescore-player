@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 
+import { logger } from '../lib/logger'
 import { waitFrame } from '../lib/waitFrame'
 
 // 楽譜を初回表示する際の拡大率。必要に応じてここを調整する。
@@ -33,7 +34,7 @@ export const useOSMD = (
 
       // 幅が変化した場合のみ処理を実行
       if (currentWidth !== lastWidth) {
-        console.log(
+        logger.log(
           '[useOSMD] Width changed from',
           lastWidth,
           'to',
@@ -48,18 +49,18 @@ export const useOSMD = (
 
         resizeTimeoutId = setTimeout(() => {
           if (osmdRef.current && isLoadedRef.current) {
-            console.log(
+            logger.log(
               '[useOSMD] Executing manual resize and render due to width change'
             )
             try {
               osmdRef.current.render()
             } catch (err) {
-              console.error('[useOSMD] Manual resize render error:', err)
+              logger.error('[useOSMD] Manual resize render error:', err)
             }
           }
         }, 300)
       } else {
-        console.log('[useOSMD] Ignored height change', {
+        logger.log('[useOSMD] Ignored height change', {
           width: currentWidth,
           height: currentHeight,
         })
@@ -76,15 +77,13 @@ export const useOSMD = (
   }, [])
 
   useEffect(() => {
-    console.log('[useOSMD] useEffect triggered', {
+    logger.log('[useOSMD] useEffect triggered', {
       hasMusicXml: !!musicXml,
       hasMusicMxl: !!musicMxl,
     })
     const container = containerRef.current
     if ((!musicXml && !musicMxl) || !container) {
-      console.log(
-        '[useOSMD] Skipping setup - missing music source or container'
-      )
+      logger.log('[useOSMD] Skipping setup - missing music source or container')
       setIsRendering(false)
       return
     }
@@ -92,7 +91,7 @@ export const useOSMD = (
     let isCancelled = false
 
     const setup = async () => {
-      console.log('[useOSMD] setup starting...')
+      logger.log('[useOSMD] setup starting...')
       try {
         setRenderError(null)
         setIsRendering(true)
@@ -101,11 +100,11 @@ export const useOSMD = (
         await waitFrame()
 
         if (isCancelled || !container) {
-          console.log('[useOSMD] setup cancelled before OSMD initialization')
+          logger.log('[useOSMD] setup cancelled before OSMD initialization')
           return
         }
 
-        console.log('[useOSMD] Initializing OpenSheetMusicDisplay')
+        logger.log('[useOSMD] Initializing OpenSheetMusicDisplay')
         const { OpenSheetMusicDisplay } = await import('opensheetmusicdisplay')
         if (isCancelled) return
 
@@ -133,13 +132,13 @@ export const useOSMD = (
         isLoadedRef.current = false
 
         if (musicXml) {
-          console.log('[useOSMD] Loading musicXml string')
+          logger.log('[useOSMD] Loading musicXml string')
           try {
             await osmd.load(musicXml)
           } catch (xmlError) {
             if (!musicMxl || isCancelled) throw xmlError
 
-            console.warn(
+            logger.warn(
               '[useOSMD] MusicXML load failed; retrying with MXL',
               xmlError
             )
@@ -150,7 +149,7 @@ export const useOSMD = (
             await loadMxl(osmd)
           }
         } else if (musicMxl) {
-          console.log('[useOSMD] Loading musicMxl blob')
+          logger.log('[useOSMD] Loading musicMxl blob')
           await loadMxl(osmd)
         } else return
 
@@ -163,7 +162,7 @@ export const useOSMD = (
         // 描画すると GraphicalGlissando 内で HasEndLine 参照に失敗する。
         // XML や再生情報は保持し、該当する楽譜でスライド線の描画だけを止める。
         if (musicXml && /<slide\b/.test(musicXml)) {
-          console.warn(
+          logger.warn(
             '[useOSMD] Disabling slide rendering to avoid an OSMD layout error'
           )
           osmd.EngravingRules.RenderGlissandi = false
@@ -174,15 +173,15 @@ export const useOSMD = (
         osmd.zoom = zoomRef.current
 
         if (!isCancelled) {
-          console.log('[useOSMD] Calling osmd.render()')
+          logger.log('[useOSMD] Calling osmd.render()')
           osmd.render()
           setIsRendering(false)
         } else {
-          console.log('[useOSMD] Render cancelled before rendering')
+          logger.log('[useOSMD] Render cancelled before rendering')
         }
       } catch (err) {
         if (!isCancelled) {
-          console.error('OSMD Render Error:', err)
+          logger.error('OSMD Render Error:', err)
           isLoadedRef.current = false
           osmdRef.current?.clear()
           osmdRef.current = null
@@ -196,7 +195,7 @@ export const useOSMD = (
     setup()
 
     return () => {
-      console.log('[useOSMD] useEffect cleanup - clearing OSMD')
+      logger.log('[useOSMD] useEffect cleanup - clearing OSMD')
       isCancelled = true
       isLoadedRef.current = false
       if (osmdRef.current) {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { featureFlags } from '../config/featureFlags'
+import { logger } from '../lib/logger'
 import { convertMsczToMusicXml } from '../lib/msczConverter'
 import {
   SCORE_CACHE_VERSION,
@@ -16,18 +17,48 @@ import {
 } from '../lib/scoreHistory'
 import { useScoreStore } from '../stores/useScoreStore'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
-
-const formatFileSize = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
+import { Icon } from './ui/Icon'
 
 const formatOpenedAt = (timestamp: number) =>
   new Intl.DateTimeFormat('ja-JP', {
     dateStyle: 'short',
     timeStyle: 'short',
   }).format(timestamp)
+
+const getUploadErrorContent = (message: string) => {
+  if (message.includes('対応していないファイル形式')) {
+    return {
+      title: 'ファイル形式を確認してください',
+      description: '拡張子が .mscz のMuseScoreファイルを選択してください。',
+    }
+  }
+  if (message.includes('ファイルサイズが大きすぎます')) {
+    return {
+      title: 'ファイルサイズが上限を超えています',
+      description: '100MB以下のMSCZファイルを選択してください。',
+    }
+  }
+  if (
+    message.includes('MusicXML に変換できません') ||
+    message.includes('変換')
+  ) {
+    return {
+      title: '楽譜を読み取れませんでした',
+      description:
+        'MuseScoreで楽譜を開き、最新版のMSCZとして保存し直してからお試しください。',
+    }
+  }
+  if (message.includes('demo.mscz')) {
+    return {
+      title: 'サンプル楽譜を読み込めませんでした',
+      description: '通信状態を確認して、もう一度お試しください。',
+    }
+  }
+  return {
+    title: '楽譜を開けませんでした',
+    description: `${message} 別のファイルを選ぶか、もう一度お試しください。`,
+  }
+}
 
 export const FileUploader = () => {
   const [isDragging, setIsDragging] = useState(false)
@@ -49,6 +80,7 @@ export const FileUploader = () => {
 
   const hasLoadedScore = Boolean(fileName && musicXml && !isLoading)
   const isHistoryBusy = restoringId !== null || deletingId !== null
+  const uploadErrorContent = error ? getUploadErrorContent(error) : null
 
   const refreshHistory = useCallback(async () => {
     setIsHistoryLoading(true)
@@ -151,7 +183,7 @@ export const FileUploader = () => {
             })
             await refreshHistory()
           } catch (historySaveError) {
-            console.error('履歴保存エラー:', historySaveError)
+            logger.error('履歴保存エラー:', historySaveError)
             setStorageWarning(
               '楽譜は開けましたが、この端末に履歴を保存できませんでした。'
             )
@@ -160,7 +192,7 @@ export const FileUploader = () => {
       } catch (err) {
         const message =
           err instanceof Error ? err.message : '不明なエラーが発生しました'
-        console.error('ファイル処理エラー:', message)
+        logger.error('ファイル処理エラー:', message)
         setError(message)
         setLoading(false)
       }
@@ -211,7 +243,7 @@ export const FileUploader = () => {
           await touchCachedScore(item.id)
           await refreshHistory()
         } catch (touchError) {
-          console.error('履歴更新エラー:', touchError)
+          logger.error('履歴更新エラー:', touchError)
           setStorageWarning(
             '楽譜は開けましたが、履歴の最終利用日時を更新できませんでした。'
           )
@@ -314,15 +346,24 @@ export const FileUploader = () => {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : '不明なエラーが発生しました'
-      console.error('demo.mscz 処理エラー:', message)
+      logger.error('demo.mscz 処理エラー:', message)
       setError(message)
     }
   }, [processFile, setError])
 
   return (
-    <section className="mt-12 w-full max-w-2xl space-y-6 rounded-lg bg-white p-4 shadow-lg">
-      {!hasLoadedScore && !isLoading && (
+    <section className="w-full px-5 pt-9 pb-10 sm:mx-auto sm:mt-10 sm:max-w-2xl sm:rounded-3xl sm:bg-white sm:p-8 sm:shadow-lg">
+      {!hasLoadedScore && (
         <>
+          <div className="mb-7">
+            <h1 className="text-[28px] leading-tight font-extrabold tracking-[-0.035em] text-[#071b47] sm:text-3xl">
+              楽譜を開いて、練習しよう。
+            </h1>
+            <p className="mt-3 text-[15px] leading-6 text-slate-500">
+              MuseScoreファイルを端末内で表示・再生できます
+            </p>
+          </div>
+
           <div
             role="button"
             tabIndex={0}
@@ -334,10 +375,8 @@ export const FileUploader = () => {
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className={`rounded-lg border-2 border-dashed px-8 py-12 text-center transition-colors ${
-              isDragging
-                ? 'border-blue-500 bg-blue-50'
-                : 'border-gray-300 hover:border-blue-400'
+            className={`rounded-2xl border bg-white p-4 shadow-[0_8px_30px_rgba(15,38,75,0.08)] transition-colors ${
+              isDragging ? 'border-blue-500 bg-blue-50' : 'border-slate-200'
             }`}
           >
             <input
@@ -348,48 +387,58 @@ export const FileUploader = () => {
               disabled={isLoading}
               className="hidden"
             />
-
-            <div className="space-y-4">
-              <div className="text-4xl">🎵</div>
-              <div>
-                <p className="text-lg font-semibold text-gray-700">
-                  MSCZ ファイルをドラッグ&ドロップ
-                </p>
-                <p className="mt-2 text-sm text-gray-600">
-                  または以下をクリックして選択
-                </p>
-              </div>
+            <div className="space-y-4 text-center">
               <button
-                onClick={() => fileInputRef.current?.click()}
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  fileInputRef.current?.click()
+                }}
                 disabled={isLoading}
-                className="inline-block rounded-lg bg-blue-500 px-6 py-2 font-medium text-white transition-colors hover:bg-blue-600 disabled:bg-gray-400"
+                className="flex w-full items-center justify-center gap-3 rounded-xl bg-linear-to-r from-blue-600 to-[#0876f9] px-5 py-5 text-lg font-bold text-white shadow-[0_8px_20px_rgba(24,104,242,0.22)] active:scale-[0.99] disabled:cursor-wait disabled:from-slate-300 disabled:to-slate-300 disabled:shadow-none"
               >
-                {isLoading ? '処理中...' : 'ファイルを選択'}
+                {isLoading ? (
+                  <span
+                    className="size-5 animate-spin rounded-full border-2 border-white/45 border-t-white"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Icon name="upload-file" />
+                )}
+                {isLoading ? '楽譜を読み込み中' : '楽譜をアップロード'}
               </button>
+              {uploadErrorContent && (
+                <Alert variant="error">
+                  <AlertTitle>{uploadErrorContent.title}</AlertTitle>
+                  <AlertDescription>
+                    {uploadErrorContent.description}
+                  </AlertDescription>
+                </Alert>
+              )}
+              <p className="text-sm text-slate-500">対応形式 .mscz</p>
+              <p className="flex items-center justify-center gap-2 text-xs text-slate-500">
+                <Icon name="lock" size="small" />
+                ファイルは外部に送信されません
+              </p>
             </div>
           </div>
 
           {featureFlags.demoButton && (
             <>
-              <div className="flex items-center gap-4">
-                <div className="flex-1 border-t border-gray-300" />
-                <span className="text-sm text-gray-500">または</span>
-                <div className="flex-1 border-t border-gray-300" />
-              </div>
-
               <button
                 onClick={loadDemoFile}
                 disabled={isLoading}
-                className="w-full rounded-lg border border-gray-300 px-4 py-3 font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:bg-gray-100"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-blue-500 bg-white px-4 py-3.5 font-bold text-blue-600 disabled:bg-gray-100"
               >
+                <Icon name="music-note" />
                 {isLoading ? '処理中...' : 'デモ楽譜を読み込み'}
               </button>
             </>
           )}
 
-          <div className="border-t border-gray-200 pt-6">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-800">
+          <div className="mt-9">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-extrabold tracking-tight text-[#071b47]">
                 最近開いた楽譜
               </h2>
               {!isHistoryLoading && historyError && (
@@ -405,56 +454,55 @@ export const FileUploader = () => {
             </div>
 
             {isHistoryLoading ? (
-              <p className="text-sm text-gray-500">履歴を読み込んでいます...</p>
+              <p className="py-3 text-sm text-slate-400">
+                履歴を読み込んでいます...
+              </p>
             ) : historyError ? (
               <Alert variant="error">
                 <AlertTitle>履歴を読み込めませんでした</AlertTitle>
                 <AlertDescription>{historyError}</AlertDescription>
               </Alert>
             ) : history.length === 0 ? (
-              <p className="rounded-lg bg-gray-50 px-4 py-5 text-center text-sm text-gray-500">
-                まだ履歴はありません
+              <p className="rounded-xl border border-slate-100 bg-white px-4 py-4 text-sm text-slate-400">
+                まだ開いた楽譜はありません
               </p>
             ) : (
-              <ul className="space-y-2">
+              <ul className="space-y-3">
                 {history.map((item) => (
                   <li
                     key={item.id}
-                    className="flex items-center gap-3 rounded-lg border border-gray-200 p-3"
+                    className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_4px_16px_rgba(15,38,75,0.05)]"
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium text-gray-800">
-                        {item.fileName}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {formatFileSize(item.fileSize)}・
-                        {formatOpenedAt(item.openedAt)}
-                      </p>
-                    </div>
                     <button
                       type="button"
                       onClick={() => void openFromHistory(item)}
                       disabled={isHistoryBusy || isLoading}
-                      className="rounded-md bg-blue-500 px-3 py-2 text-sm font-medium text-white hover:bg-blue-600 disabled:bg-gray-400"
+                      className="min-w-0 flex-1 px-1 py-1 text-left disabled:opacity-50"
                     >
-                      {restoringId === item.id ? '読込中...' : '開く'}
+                      <p className="truncate font-bold text-[#071b47]">
+                        {item.fileName}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        最後に開いた日時：{formatOpenedAt(item.openedAt)}
+                      </p>
                     </button>
                     <button
                       type="button"
                       onClick={() => void removeFromHistory(item)}
                       disabled={isHistoryBusy || isLoading}
-                      className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:text-gray-300"
+                      className="grid size-9 shrink-0 place-items-center rounded-full text-slate-400 active:bg-red-50 active:text-red-600 disabled:opacity-30"
+                      aria-label={`${item.fileName}を履歴から削除`}
                     >
-                      {deletingId === item.id ? '削除中...' : '削除'}
+                      {deletingId === item.id ? (
+                        <span className="size-4 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+                      ) : (
+                        <Icon name="delete" size="small" />
+                      )}
                     </button>
                   </li>
                 ))}
               </ul>
             )}
-
-            <p className="mt-3 text-xs text-gray-500">
-              履歴はこの端末のブラウザ内だけに保存されます。ブラウザのデータを削除すると履歴も消去されます。
-            </p>
           </div>
         </>
       )}
@@ -466,12 +514,9 @@ export const FileUploader = () => {
         </Alert>
       )}
 
-      {error && (
-        <Alert variant="error">
-          <AlertTitle>エラーが発生しました</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
+      <p className="mt-10 text-center text-xs text-slate-400">
+        ブラウザだけで使えます・インストール不要
+      </p>
     </section>
   )
 }

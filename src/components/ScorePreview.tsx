@@ -6,6 +6,7 @@ import { useShallow } from 'zustand/shallow'
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
 import { useNoteInteraction } from '../hooks/useNoteInteraction'
 import { DEFAULT_SCORE_ZOOM, useOSMD } from '../hooks/useOSMD'
+import { logger } from '../lib/logger'
 import {
   type NoteEvent,
   type TempoChange,
@@ -62,7 +63,7 @@ const syncCursorImageSize = (cursorElement?: HTMLImageElement | null) => {
 }
 
 export const ScorePreview = () => {
-  console.log('[ScorePreview] rendering...')
+  logger.log('[ScorePreview] rendering...')
   const lastCursorEventTimeRef = useRef<number | null>(null)
   const lastCursorTopRef = useRef<string | null>(null)
   const scoreZoomPercentageRef = useRef(100)
@@ -117,7 +118,7 @@ export const ScorePreview = () => {
         }
       })
       .catch((error: unknown) => {
-        console.error('MusicXML event parsing failed:', error)
+        logger.error('MusicXML event parsing failed:', error)
         if (!cancelled) {
           setParsedEventsState({
             musicXml,
@@ -331,7 +332,7 @@ export const ScorePreview = () => {
           <AlertDescription>{renderError}</AlertDescription>
         </Alert>
       ) : (
-        <div className="overflow-x-auto rounded-lg bg-white">
+        <div className="relative overflow-x-auto rounded-lg bg-white">
           <div
             ref={containerRef}
             className="score-preview relative w-full bg-white"
@@ -352,6 +353,21 @@ export const ScorePreview = () => {
                 楽譜ファイルを読み込んで MusicXML に変換しています
               </AlertDescription>
             </Alert>
+          )}
+          {(isRendering || isZoomRendering) && (
+            <div
+              className="fixed inset-0 z-40 grid place-items-center bg-white/65 backdrop-blur-[1px]"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 text-sm font-bold text-[#071b47] shadow-xl">
+                <span
+                  className="size-5 animate-spin rounded-full border-2 border-blue-100 border-t-blue-600"
+                  aria-hidden="true"
+                />
+                楽譜を描画しています
+              </div>
+            </div>
           )}
           <ControlModal
             play={play}
