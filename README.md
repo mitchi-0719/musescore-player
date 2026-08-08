@@ -67,7 +67,23 @@ npm run dev
 
 起動後、表示された URL（通常 `http://localhost:5173`）を開いてください。
 
-### 4. 動作確認
+production用の環境変数で開発サーバーを起動する場合は、次を実行します。
+
+```bash
+npm run dev:production
+```
+
+これはproduction用の環境変数やFeature Flagをローカルで確認するためのコマンドです。本番ビルドそのものを確認するときは、`npm run build`の後に`npm run preview`を実行してください。
+
+### 4. Feature Flag
+
+公開前の機能は `src/config/featureFlags.ts` で管理します。`VITE_FEATURE_*` 環境変数は、値が文字列の `true` の場合だけ有効になり、未設定を含むそれ以外の値では無効になります。
+
+開発環境で有効にするフラグは `.env.development` に記載します。productionではデフォルトで無効になるため、無効化用の環境変数を設定する必要はありません。機能を正式公開するときは、環境変数、`featureFlags` の項目、利用箇所の条件分岐を削除します。
+
+`VITE_` で始まる環境変数はブラウザへ公開されるため、秘密情報には使用しないでください。
+
+### 5. 動作確認
 
 1. 画面の「デモ楽譜を読み込み」をクリック  
    または `.mscz` ファイルをドラッグ&ドロップ

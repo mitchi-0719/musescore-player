@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { featureFlags } from '../config/featureFlags'
 import { convertMsczToMusicXml } from '../lib/msczConverter'
 import {
   SCORE_CACHE_VERSION,
@@ -368,19 +369,23 @@ export const FileUploader = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="flex-1 border-t border-gray-300" />
-            <span className="text-sm text-gray-500">または</span>
-            <div className="flex-1 border-t border-gray-300" />
-          </div>
+          {featureFlags.demoButton && (
+            <>
+              <div className="flex items-center gap-4">
+                <div className="flex-1 border-t border-gray-300" />
+                <span className="text-sm text-gray-500">または</span>
+                <div className="flex-1 border-t border-gray-300" />
+              </div>
 
-          <button
-            onClick={loadDemoFile}
-            disabled={isLoading}
-            className="w-full rounded-lg border border-gray-300 px-4 py-3 font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:bg-gray-100"
-          >
-            {isLoading ? '処理中...' : 'デモ楽譜を読み込み'}
-          </button>
+              <button
+                onClick={loadDemoFile}
+                disabled={isLoading}
+                className="w-full rounded-lg border border-gray-300 px-4 py-3 font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:bg-gray-100"
+              >
+                {isLoading ? '処理中...' : 'デモ楽譜を読み込み'}
+              </button>
+            </>
+          )}
 
           <div className="border-t border-gray-200 pt-6">
             <div className="mb-3 flex items-center justify-between">
