@@ -23,7 +23,7 @@ export const Header = ({ hasScore }: HeaderProps) => {
   return (
     <>
       <header
-        className="sticky top-0 right-0 left-0 z-40 border-b border-slate-200 bg-white/95 text-[#071b47] backdrop-blur"
+        className="sticky top-0 right-0 left-0 z-40 border-b border-slate-200 bg-white/95 text-[#071b47] shadow-[0_4px_16px_rgba(15,38,75,0.10)] backdrop-blur"
         data-app-header
       >
         <div className="mx-auto flex h-18 w-full max-w-5xl items-center justify-between px-4 sm:h-20 sm:px-6">
@@ -111,16 +111,17 @@ export const Header = ({ hasScore }: HeaderProps) => {
                 <Icon name="close" size="small" />
               </button>
             </div>
-            <ul className="mt-5 space-y-3 text-sm leading-6 text-slate-600">
+            <ul className="mt-5 space-y-1 text-sm leading-6 text-slate-600">
               <li>MSCZ楽譜をブラウザ内で表示・再生できます。</li>
               <li>ファイルは外部へ送信されず、端末内で処理されます。</li>
               <li>
                 音符のタップ、テンポ変更、パート別の音量調整に対応しています。
               </li>
-              <li>
-                ブラウザのメニューからホーム画面へ追加すると、PWAとしてアプリのようにすぐ起動できます。
-              </li>
             </ul>
+            <h4 className="mt-4 text-sm font-bold">追加のやり方</h4>
+            <p className="mt-2 text-sm">
+              ブラウザのメニューからホーム画面へ追加すると、アプリのようにすぐ起動できます。
+            </p>
             <button
               type="button"
               onClick={() => setIsAboutOpen(false)}

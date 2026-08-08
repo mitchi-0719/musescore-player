@@ -132,9 +132,7 @@ const debugPlaybackPosition = (
   event: string,
   values: Record<string, number | string | null>
 ) => {
-  if (import.meta.env.DEV) {
-    logger.debug(`[playback-position] ${JSON.stringify({ event, ...values })}`)
-  }
+  logger.debug(`[playback-position] ${JSON.stringify({ event, ...values })}`)
 }
 
 const ticksToScoreSeconds = (ticks: number, tempoChanges: TempoChange[]) => {
