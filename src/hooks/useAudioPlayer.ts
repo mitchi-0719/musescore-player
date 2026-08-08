@@ -432,15 +432,20 @@ export const useAudioPlayer = (
         Number(_toneModule!.getTransport().ticks)
       )
       playbackPositionTicksRef.current = ticks
-      setCurrentScoreTime(
-        ticksToScoreSeconds(ticks, scoreTimeline.tempoChanges)
-      )
+      const scoreTime = ticksToScoreSeconds(ticks, scoreTimeline.tempoChanges)
+      setCurrentScoreTime(scoreTime)
+
+      if (scoreTimeline.totalTicks > 0 && ticks >= scoreTimeline.totalTicks) {
+        setHighlightedNote(scoreTimeline.totalTicks)
+        setIsPlaying(false)
+        return
+      }
       animationFrameId = requestAnimationFrame(updatePosition)
     }
     animationFrameId = requestAnimationFrame(updatePosition)
 
     return () => cancelAnimationFrame(animationFrameId)
-  }, [isPlaying, scoreTimeline, toneReady])
+  }, [isPlaying, scoreTimeline, setHighlightedNote, setIsPlaying, toneReady])
 
   // Tone.js の遅延ロード：parsedEvents が存在したら初めてロードする
   useEffect(() => {
@@ -1019,8 +1024,27 @@ export const useAudioPlayer = (
   }, [setIsPlaying])
 
   const stop = useCallback(() => {
+    if (_toneModule) {
+      const transport = _toneModule.getTransport()
+      if (transport.state === 'started') {
+        const stoppedTicks = Math.min(
+          scoreTimeline.totalTicks,
+          Math.max(0, Number(transport.ticks))
+        )
+        playbackPositionTicksRef.current = stoppedTicks
+        setCurrentScoreTime(
+          ticksToScoreSeconds(stoppedTicks, scoreTimeline.tempoChanges)
+        )
+        setHighlightedNote(stoppedTicks)
+        debugPlaybackPosition('stop-position-saved', {
+          ticks: stoppedTicks,
+          transportTicks: Number(transport.ticks),
+          transportState: transport.state,
+        })
+      }
+    }
     setIsPlaying(false)
-  }, [setIsPlaying])
+  }, [scoreTimeline, setHighlightedNote, setIsPlaying])
 
   const seek = useCallback(
     (time: number) => {
