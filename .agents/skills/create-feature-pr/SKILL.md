@@ -33,7 +33,10 @@ git diff --stat develop...HEAD
 gh auth status
 ```
 
-- Gitリポジトリ内でない、`origin` がない、GitHub認証がない、または現在のブランチが期待する `feature/{issue番号}` と異なる場合は、pushせず状況を報告する。
+- `gh auth status` は参考情報として扱い、その出力だけでGitHub認証切れと判断しない。GitHub Appが利用できる環境では、対象リポジトリのIssue検索など読み取りAPIを1回実行して実アクセスを確認する。CLIを使う場合は `gh api repos/{owner}/{repo}`、push認証は対象ブランチへの実際の `git push` で確認する。
+- GitHub Appの読み取りが成功した場合、`gh` の保存トークンが無効でもGitHub全体の認証切れとは報告しない。Issue・PR操作はGitHub Appを優先し、pushだけGitの認証経路で実行する。
+- 認証切れとしてユーザー対応を求めるのは、実行に必要なGitHub App、`gh api`、または`git push`の実リクエストが認証エラーで失敗し、利用可能な代替経路もない場合だけにする。DNS、sandbox、ネットワーク到達性の失敗を認証エラーとして扱わない。
+- Gitリポジトリ内でない、`origin` がない、利用可能なGitHubアクセス経路がない、または現在のブランチが期待する `feature/{issue番号}` と異なる場合は、pushせず状況を報告する。
 - issue番号は数字のみを許可する。
 - 既にstage済みの変更を勝手にunstageしない。対象作業と無関係な変更が混在し、安全に分離できない場合だけユーザーに確認する。
 
@@ -65,7 +68,7 @@ git commit -m "refs #{issue番号} {commitの内容を表す短い概要}"
 git push --set-upstream origin "feature/{issue番号}"
 ```
 
-2. push成功後、同じhead/baseの既存PRを確認する。
+2. push成功後、同じhead/baseの既存PRを確認する。GitHub Appが利用可能ならPR検索を優先し、利用できない場合のみ`gh`を使う。
 
 ```bash
 gh pr list --head "feature/{issue番号}" --base develop --state all --json number,state,url,title
@@ -73,7 +76,7 @@ gh pr list --head "feature/{issue番号}" --base develop --state all --json numb
 
 3. openなPRがすでにある場合は重複作成せず、pushで更新された既存PRのURLを返す。closedまたはmergedのPRしかない場合は、その事実を報告し、新規PRを作るかユーザーに確認する。
 4. 差分とコミットから、簡潔な本文を `概要` と `確認内容` の見出し付きで作る。実行していないテストを実行済みと書かない。
-5. `gh pr create` でPRを作成する。タイトルは一字一句、指定形式に従う。本文は一時ファイルに保存して `--body-file` で渡し、シェル展開の事故を避ける。
+5. GitHub Appが利用可能ならそれを使い、なければ`gh pr create`でPRを作成する。タイトルは一字一句、指定形式に従う。CLIの場合、本文は一時ファイルに保存して`--body-file`で渡し、シェル展開の事故を避ける。
 
 ```bash
 gh pr create \

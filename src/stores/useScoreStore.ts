@@ -57,6 +57,12 @@ export interface ScoreState {
 
   // 解析 / 再生 アクション
   setFileBinary: (binary: Uint8Array, fileName: string) => void
+  setConvertedScore: (score: {
+    fileName: string
+    fileBinary: Uint8Array | null
+    musicXml: string
+    musicMxl: Uint8Array | null
+  }) => void
   setMusicXml: (xml: string) => void
   setMusicMxl: (mxl: Uint8Array | null) => void
   setLoading: (isLoading: boolean) => void
@@ -104,6 +110,25 @@ export const useScoreStore = create<ScoreState>((set) => ({
 
   setFileBinary: (binary, fileName) =>
     set({ fileBinary: binary, fileName, error: null }),
+
+  setConvertedScore: ({ fileName, fileBinary, musicXml, musicMxl }) =>
+    set({
+      fileName,
+      fileBinary,
+      musicXml,
+      musicMxl,
+      isLoading: false,
+      error: null,
+      measures: [],
+      notes: [],
+      totalDuration: 0,
+      player: null,
+      isPlaying: false,
+      currentTime: 0,
+      highlightedMeasureNumber: null,
+      highlightedNoteTime: null,
+      selectedNoteId: null,
+    }),
 
   setMusicXml: (xml) => set({ musicXml: xml }),
 
