@@ -30,17 +30,9 @@ export const useOSMD = (
 
     const handleWindowResize = () => {
       const currentWidth = window.innerWidth
-      const currentHeight = window.innerHeight
 
       // 幅が変化した場合のみ処理を実行
       if (currentWidth !== lastWidth) {
-        logger.log(
-          '[useOSMD] Width changed from',
-          lastWidth,
-          'to',
-          currentWidth,
-          '- Debouncing resize...'
-        )
         lastWidth = currentWidth
 
         if (resizeTimeoutId) {
@@ -49,9 +41,6 @@ export const useOSMD = (
 
         resizeTimeoutId = setTimeout(() => {
           if (osmdRef.current && isLoadedRef.current) {
-            logger.log(
-              '[useOSMD] Executing manual resize and render due to width change'
-            )
             try {
               osmdRef.current.render()
             } catch (err) {
@@ -59,11 +48,6 @@ export const useOSMD = (
             }
           }
         }, 300)
-      } else {
-        logger.log('[useOSMD] Ignored height change', {
-          width: currentWidth,
-          height: currentHeight,
-        })
       }
     }
 
@@ -77,13 +61,8 @@ export const useOSMD = (
   }, [])
 
   useEffect(() => {
-    logger.log('[useOSMD] useEffect triggered', {
-      hasMusicXml: !!musicXml,
-      hasMusicMxl: !!musicMxl,
-    })
     const container = containerRef.current
     if ((!musicXml && !musicMxl) || !container) {
-      logger.log('[useOSMD] Skipping setup - missing music source or container')
       setIsRendering(false)
       return
     }
@@ -91,7 +70,6 @@ export const useOSMD = (
     let isCancelled = false
 
     const setup = async () => {
-      logger.log('[useOSMD] setup starting...')
       try {
         setRenderError(null)
         setIsRendering(true)
@@ -100,11 +78,9 @@ export const useOSMD = (
         await waitFrame()
 
         if (isCancelled || !container) {
-          logger.log('[useOSMD] setup cancelled before OSMD initialization')
           return
         }
 
-        logger.log('[useOSMD] Initializing OpenSheetMusicDisplay')
         const { OpenSheetMusicDisplay } = await import('opensheetmusicdisplay')
         if (isCancelled) return
 
@@ -132,7 +108,6 @@ export const useOSMD = (
         isLoadedRef.current = false
 
         if (musicXml) {
-          logger.log('[useOSMD] Loading musicXml string')
           try {
             await osmd.load(musicXml)
           } catch (xmlError) {
@@ -149,7 +124,6 @@ export const useOSMD = (
             await loadMxl(osmd)
           }
         } else if (musicMxl) {
-          logger.log('[useOSMD] Loading musicMxl blob')
           await loadMxl(osmd)
         } else return
 
@@ -173,11 +147,8 @@ export const useOSMD = (
         osmd.zoom = zoomRef.current
 
         if (!isCancelled) {
-          logger.log('[useOSMD] Calling osmd.render()')
           osmd.render()
           setIsRendering(false)
-        } else {
-          logger.log('[useOSMD] Render cancelled before rendering')
         }
       } catch (err) {
         if (!isCancelled) {
@@ -195,7 +166,6 @@ export const useOSMD = (
     setup()
 
     return () => {
-      logger.log('[useOSMD] useEffect cleanup - clearing OSMD')
       isCancelled = true
       isLoadedRef.current = false
       if (osmdRef.current) {

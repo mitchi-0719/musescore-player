@@ -6,7 +6,6 @@ import { DRUM_MAP, MIDI_UNPITCHED_TO_KEY } from '../constants/drum'
 import { PIANO_MAP } from '../constants/piano'
 import { logger } from '../lib/logger'
 import type { NoteEvent, SamplerId, TempoChange } from '../lib/musicXmlParser'
-import { tracePlayback } from '../lib/playbackTrace'
 import { useScoreStore } from '../stores/useScoreStore'
 
 type AudioPlayerOptions = {
@@ -128,13 +127,6 @@ const DRUM_VOLUME_MULTIPLIER = 0.5
 const DRUM_ROLL_VOLUME_MULTIPLIER = 0.2
 const REFERENCE_DYNAMIC_VELOCITY = 80
 const DYNAMIC_GAIN_EXPONENT = 2
-
-const debugPlaybackPosition = (
-  event: string,
-  values: Record<string, number | string | null>
-) => {
-  logger.debug(`[playback-position] ${JSON.stringify({ event, ...values })}`)
-}
 
 const ticksToScoreSeconds = (ticks: number, tempoChanges: TempoChange[]) => {
   const changes = tempoChanges.length ? tempoChanges : [{ time: 0, bpm: 120 }]
@@ -344,11 +336,6 @@ export const useAudioPlayer = (
   const tempoScheduleIdsRef = useRef<number[]>([])
   const tempoMultiplierRef = useRef(tempoPercentage / 100)
   const playbackPositionTicksRef = useRef(highlightedNoteTime ?? 0)
-  const lastSeekTraceRef = useRef<{
-    requestedTime: number
-    ticks: number
-    timestamp: number
-  } | null>(null)
   const onNoteStartRef = useRef(options.onNoteStart)
   const onPlaybackStartRef = useRef(options.onPlaybackStart)
   const onPlaybackStopRef = useRef(options.onPlaybackStop)
@@ -394,12 +381,6 @@ export const useAudioPlayer = (
   useEffect(() => {
     // 停止中に楽譜上の音符を選んだ場合も、次回の開始位置へ反映する。
     if (!isPlaying && highlightedNoteTime !== null) {
-      tracePlayback('audio-player', 'stopped-highlight-sync', {
-        highlightedTicks: highlightedNoteTime,
-        previousPlaybackTicks: playbackPositionTicksRef.current,
-        totalTicks: scoreTimeline.totalTicks,
-        storeCurrentTime: useScoreStore.getState().currentTime,
-      })
       playbackPositionTicksRef.current = highlightedNoteTime
     }
   }, [highlightedNoteTime, isPlaying, scoreTimeline.totalTicks])
@@ -436,31 +417,11 @@ export const useAudioPlayer = (
     const updatePosition = () => {
       const transport = _toneModule!.getTransport()
       const ticks = Math.min(scoreTimeline.totalTicks, Number(transport.ticks))
-      const recentSeek = lastSeekTraceRef.current
-      if (recentSeek && Date.now() - recentSeek.timestamp <= 1500) {
-        tracePlayback('playback-loop', 'update-after-seek', {
-          requestedTime: recentSeek.requestedTime,
-          requestedTicks: recentSeek.ticks,
-          observedTicks: ticks,
-          rawTransportTicks: Number(transport.ticks),
-          transportState: transport.state,
-          storeIsPlaying: useScoreStore.getState().isPlaying,
-          storeCurrentTimeBeforeUpdate: useScoreStore.getState().currentTime,
-          millisecondsAfterSeek: Date.now() - recentSeek.timestamp,
-        })
-      }
       playbackPositionTicksRef.current = ticks
       const scoreTime = ticksToScoreSeconds(ticks, scoreTimeline.tempoChanges)
       setCurrentTime(scoreTime)
 
       if (scoreTimeline.totalTicks > 0 && ticks >= scoreTimeline.totalTicks) {
-        tracePlayback('playback-loop', 'reached-end', {
-          ticks,
-          totalTicks: scoreTimeline.totalTicks,
-          scoreTime,
-          totalDuration: scoreTimeline.totalDuration,
-          transportState: transport.state,
-        })
         setHighlightedNote(scoreTimeline.totalTicks)
         setIsPlaying(false)
         return
@@ -991,14 +952,7 @@ export const useAudioPlayer = (
   useEffect(() => {
     if (!toneReady) return
     const Tone = _toneModule!
-    tracePlayback('audio-player', 'playing-effect', {
-      isPlaying,
-      playbackTicks: playbackPositionTicksRef.current,
-      totalTicks: scoreTimeline.totalTicks,
-      storeCurrentTime: useScoreStore.getState().currentTime,
-      transportTicks: Number(Tone.getTransport().ticks),
-      transportState: Tone.getTransport().state,
-    })
+
     if (isPlaying) {
       // Tone.js の tick 記法（`123i`）には整数だけを渡す。
       // 小数tickを文字列化すると、一部のモバイルブラウザで桁違いの
@@ -1014,13 +968,7 @@ export const useAudioPlayer = (
         options.tempoChanges?.[0]?.bpm ?? 120
       )
       transport.bpm.value = activeTempo * tempoMultiplierRef.current
-      debugPlaybackPosition('start-requested', {
-        startTicks,
-        storedTicks: playbackPositionTicksRef.current,
-        highlightedTicks: useScoreStore.getState().highlightedNoteTime,
-        transportTicks: Number(transport.ticks),
-        transportState: transport.state,
-      })
+
       onPlaybackStartRef.current?.(startTicks)
       metronomeLoopRef.current?.start(0)
       // 前回停止時の内部タイムラインが残っていても、開始offsetを必ず適用する。
@@ -1036,11 +984,6 @@ export const useAudioPlayer = (
           })
           transport.ticks = startTicks
         }
-        debugPlaybackPosition('start-applied', {
-          requestedTicks: startTicks,
-          transportTicks: Number(transport.ticks),
-          transportState: transport.state,
-        })
       })
     } else {
       Tone.getDraw().cancel()
@@ -1067,23 +1010,11 @@ export const useAudioPlayer = (
     const Tone = await getTone()
     await Tone.start()
 
-    tracePlayback('audio-player', 'play-requested', {
-      playbackTicks: playbackPositionTicksRef.current,
-      totalTicks: scoreTimeline.totalTicks,
-      storeCurrentTime: useScoreStore.getState().currentTime,
-      transportTicks: Number(Tone.getTransport().ticks),
-      transportState: Tone.getTransport().state,
-    })
-
     // 最後まで再生した後は、再生ボタンで先頭から再開する。
     if (
       scoreTimeline.totalTicks > 0 &&
       playbackPositionTicksRef.current >= scoreTimeline.totalTicks
     ) {
-      tracePlayback('audio-player', 'restart-from-end', {
-        playbackTicks: playbackPositionTicksRef.current,
-        totalTicks: scoreTimeline.totalTicks,
-      })
       playbackPositionTicksRef.current = 0
       setCurrentTime(0)
       setHighlightedNote(0)
@@ -1098,15 +1029,6 @@ export const useAudioPlayer = (
   ])
 
   const stop = useCallback(() => {
-    tracePlayback('audio-player', 'stop-requested', {
-      playbackTicks: playbackPositionTicksRef.current,
-      totalTicks: scoreTimeline.totalTicks,
-      storeCurrentTime: useScoreStore.getState().currentTime,
-      transportTicks: _toneModule
-        ? Number(_toneModule.getTransport().ticks)
-        : null,
-      transportState: _toneModule?.getTransport().state ?? 'unavailable',
-    })
     if (_toneModule) {
       const transport = _toneModule.getTransport()
       if (transport.state === 'started') {
@@ -1119,11 +1041,6 @@ export const useAudioPlayer = (
           ticksToScoreSeconds(stoppedTicks, scoreTimeline.tempoChanges)
         )
         setHighlightedNote(stoppedTicks)
-        debugPlaybackPosition('stop-position-saved', {
-          ticks: stoppedTicks,
-          transportTicks: Number(transport.ticks),
-          transportState: transport.state,
-        })
       }
     }
     setIsPlaying(false)
@@ -1141,42 +1058,9 @@ export const useAudioPlayer = (
           scoreSecondsToTicks(clampedTime, scoreTimeline.tempoChanges)
         )
       )
-      const transportBeforeSeek = _toneModule?.getTransport()
-      tracePlayback('audio-player', 'seek-calculated', {
-        requestedTime: time,
-        clampedTime,
-        convertedTicks: ticks,
-        totalDuration: scoreTimeline.totalDuration,
-        totalTicks: scoreTimeline.totalTicks,
-        previousPlaybackTicks: playbackPositionTicksRef.current,
-        storeCurrentTimeBeforeSeek: useScoreStore.getState().currentTime,
-        storeIsPlaying: useScoreStore.getState().isPlaying,
-        transportTicks: transportBeforeSeek
-          ? Number(transportBeforeSeek.ticks)
-          : null,
-        transportState: transportBeforeSeek?.state ?? 'unavailable',
-      })
-      lastSeekTraceRef.current = {
-        requestedTime: time,
-        ticks,
-        timestamp: Date.now(),
-      }
       playbackPositionTicksRef.current = ticks
       setCurrentTime(clampedTime)
       setHighlightedNote(ticks)
-      tracePlayback('audio-player', 'seek-store-updated', {
-        storeCurrentTime: useScoreStore.getState().currentTime,
-        highlightedTicks: useScoreStore.getState().highlightedNoteTime,
-        playbackTicks: playbackPositionTicksRef.current,
-      })
-      debugPlaybackPosition('seek-committed', {
-        scoreTime: clampedTime,
-        ticks,
-        transportTicks: _toneModule
-          ? Number(_toneModule.getTransport().ticks)
-          : null,
-        transportState: _toneModule?.getTransport().state ?? 'unavailable',
-      })
       onSeekRef.current?.(ticks)
       if (_toneModule) {
         const transport = _toneModule.getTransport()
@@ -1191,13 +1075,6 @@ export const useAudioPlayer = (
           scoreTimeline.tempoChanges[0]?.bpm ?? 120
         )
         transport.bpm.value = activeTempo * tempoMultiplierRef.current
-        tracePlayback('audio-player', 'seek-transport-updated', {
-          requestedTicks: ticks,
-          transportTicks: Number(transport.ticks),
-          transportState: transport.state,
-          activeTempo,
-          tempoMultiplier: tempoMultiplierRef.current,
-        })
       }
     },
     [scoreTimeline, setCurrentTime, setHighlightedNote]

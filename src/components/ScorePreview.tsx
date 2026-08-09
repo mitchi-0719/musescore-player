@@ -95,7 +95,6 @@ const syncCursorImageSize = (cursorElement?: HTMLImageElement | null) => {
 }
 
 export const ScorePreview = () => {
-  logger.log('[ScorePreview] rendering...')
   const lastCursorEventTimeRef = useRef<number | null>(null)
   const lastCursorTopRef = useRef<string | null>(null)
   const scoreZoomPercentageRef = useRef(100)
