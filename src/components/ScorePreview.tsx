@@ -6,9 +6,18 @@ import { useShallow } from 'zustand/shallow'
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
 import { useNoteInteraction } from '../hooks/useNoteInteraction'
 import { DEFAULT_SCORE_ZOOM, useOSMD } from '../hooks/useOSMD'
-import { parseMusicXmlForEvents } from '../lib/musicXmlParser'
+import { logger } from '../lib/logger'
+import {
+  type NoteEvent,
+  type TempoChange,
+  parseMusicXmlForEvents,
+} from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
 import { ControlModal } from './controlModal/ControlModal'
+import type {
+  ScorePartVisibilityControl,
+  ScoreVisibilityControls,
+} from './controlModal/MixerPanel'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
 const TICKS_PER_QUARTER = 192
@@ -18,6 +27,41 @@ const MIN_CURSOR_WIDTH_PX = 4
 const SCORE_ZOOM_STEP_PERCENTAGE = 15
 const MIN_SCORE_ZOOM_PERCENTAGE = 25
 const MAX_SCORE_ZOOM_PERCENTAGE = 250
+const EMPTY_NOTE_EVENTS: NoteEvent[] = []
+const EMPTY_HIDDEN_PART_IDS = new Set<string>()
+const OSMD_UNIT_IN_PIXELS = 10
+
+type ParsedEventsState = {
+  musicXml: string
+  events: NoteEvent[]
+  tempoChanges: TempoChange[]
+}
+
+type MeasureAnchor = {
+  measureIndex: number
+  viewportOffset: number
+}
+
+const parseScoreParts = (musicXml: string | null) => {
+  if (!musicXml) return []
+
+  const doc = new DOMParser().parseFromString(musicXml, 'application/xml')
+  return Array.from(doc.querySelectorAll('part-list > score-part')).flatMap(
+    (scorePart, index) => {
+      const id = scorePart.getAttribute('id')
+      if (!id) return []
+
+      return [
+        {
+          id,
+          name:
+            scorePart.querySelector('part-name')?.textContent?.trim() ||
+            `パート ${index + 1}`,
+        },
+      ]
+    }
+  )
+}
 
 const getCursorTicks = (cursor: Cursor): number | null => {
   try {
@@ -51,13 +95,23 @@ const syncCursorImageSize = (cursorElement?: HTMLImageElement | null) => {
 }
 
 export const ScorePreview = () => {
-  console.log('[ScorePreview] rendering...')
   const lastCursorEventTimeRef = useRef<number | null>(null)
   const lastCursorTopRef = useRef<string | null>(null)
   const scoreZoomPercentageRef = useRef(100)
   const zoomRenderFrameRef = useRef<number | null>(null)
   const [scoreZoomPercentage, setScoreZoomPercentage] = useState(100)
   const [isZoomRendering, setIsZoomRendering] = useState(false)
+  const [controlModalHeight, setControlModalHeight] = useState(0)
+  const [isPartVisibilityRendering, setIsPartVisibilityRendering] =
+    useState(false)
+  const [partVisibilityState, setPartVisibilityState] = useState<{
+    musicXml: string | null
+    hiddenPartIds: Set<string>
+  }>({ musicXml: null, hiddenPartIds: EMPTY_HIDDEN_PART_IDS })
+  const [visibilityErrorState, setVisibilityErrorState] = useState<{
+    musicXml: string | null
+    message: string | null
+  }>({ musicXml: null, message: null })
   const { musicXml, musicMxl, isLoading } = useScoreStore(
     useShallow((state) => ({
       musicXml: state.musicXml,
@@ -71,6 +125,168 @@ export const ScorePreview = () => {
     musicMxl,
     (DEFAULT_SCORE_ZOOM * scoreZoomPercentage) / 100
   )
+  const scoreParts = useMemo(() => parseScoreParts(musicXml), [musicXml])
+  const hiddenPartIds =
+    partVisibilityState.musicXml === musicXml
+      ? partVisibilityState.hiddenPartIds
+      : EMPTY_HIDDEN_PART_IDS
+  const visibilityError =
+    visibilityErrorState.musicXml === musicXml
+      ? visibilityErrorState.message
+      : null
+
+  const getMeasureTop = useCallback(
+    (measureIndex: number) => {
+      const measures = osmdRef.current?.GraphicSheet?.MeasureList[measureIndex]
+      if (!measures) return null
+
+      // OSMDのMeasureListは型上GraphicalMeasure[]だが、実行時には
+      // 非表示譜表の位置がundefinedになった疎配列を返すことがある。
+      const visibleMeasure = measures.find((measure) => measure?.isVisible())
+      if (!visibleMeasure) return null
+
+      return (
+        visibleMeasure.PositionAndShape.AbsolutePosition.y *
+        OSMD_UNIT_IN_PIXELS *
+        (osmdRef.current?.zoom ?? DEFAULT_SCORE_ZOOM)
+      )
+    },
+    [osmdRef]
+  )
+
+  const captureMeasureAnchor = useCallback(() => {
+    const container = containerRef.current
+    const measureList = osmdRef.current?.GraphicSheet?.MeasureList
+    if (!container || !measureList?.length) return null
+
+    const containerTop = container.getBoundingClientRect().top + window.scrollY
+    const viewportTopInScore = Math.max(0, window.scrollY - containerTop)
+    let anchorIndex = 0
+
+    for (let index = 0; index < measureList.length; index += 1) {
+      const top = getMeasureTop(index)
+      if (top === null || top > viewportTopInScore) break
+      anchorIndex = index
+    }
+
+    const measureTop = getMeasureTop(anchorIndex)
+    if (measureTop === null) return null
+
+    return {
+      measureIndex: anchorIndex,
+      viewportOffset: containerTop + measureTop - window.scrollY,
+    }
+  }, [containerRef, getMeasureTop, osmdRef])
+
+  const restoreMeasureAnchor = useCallback(
+    (anchor: MeasureAnchor | null) => {
+      const container = containerRef.current
+      if (!anchor || !container) return
+
+      const measureTop = getMeasureTop(anchor.measureIndex)
+      if (measureTop === null) return
+
+      const containerTop =
+        container.getBoundingClientRect().top + window.scrollY
+      window.scrollTo({
+        top: Math.max(0, containerTop + measureTop - anchor.viewportOffset),
+        behavior: 'auto',
+      })
+    },
+    [containerRef, getMeasureTop]
+  )
+
+  const applyPartVisibility = useCallback(
+    (nextHiddenPartIds: Set<string>) => {
+      const osmd = osmdRef.current
+      if (!osmd || isPartVisibilityRendering) return
+
+      const previousHiddenPartIds = hiddenPartIds
+      const anchor = captureMeasureAnchor()
+      setIsPartVisibilityRendering(true)
+      setVisibilityErrorState({ musicXml, message: null })
+
+      // ローディング表示を先にブラウザへ描画してから、重いOSMD更新を行う。
+      // 楽譜サイズ変更と同様に2フレーム待つことで、クリック直後に
+      // フィードバックが見えないままメインスレッドが塞がるのを防ぐ。
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          try {
+            osmd.Sheet.Instruments.forEach((instrument) => {
+              instrument.Visible = !nextHiddenPartIds.has(instrument.IdString)
+            })
+            osmd.updateGraphic()
+            osmd.render()
+            setPartVisibilityState({
+              musicXml,
+              hiddenPartIds: nextHiddenPartIds,
+            })
+          } catch (error) {
+            logger.error('[ScorePreview] Part visibility render failed:', error)
+            osmd.Sheet.Instruments.forEach((instrument) => {
+              instrument.Visible = !previousHiddenPartIds.has(
+                instrument.IdString
+              )
+            })
+            try {
+              osmd.updateGraphic()
+              osmd.render()
+            } catch (rollbackError) {
+              logger.error(
+                '[ScorePreview] Part visibility rollback failed:',
+                rollbackError
+              )
+            }
+            setVisibilityErrorState({
+              musicXml,
+              message: 'パート表示を変更できませんでした',
+            })
+          }
+
+          // 再描画結果とスクロール補正が反映されるフレームまで表示を保つ。
+          requestAnimationFrame(() => {
+            restoreMeasureAnchor(anchor)
+            setIsPartVisibilityRendering(false)
+          })
+        })
+      })
+    },
+    [
+      captureMeasureAnchor,
+      hiddenPartIds,
+      isPartVisibilityRendering,
+      musicXml,
+      osmdRef,
+      restoreMeasureAnchor,
+    ]
+  )
+
+  const visibilityControls = useMemo<ScoreVisibilityControls>(() => {
+    const parts: ScorePartVisibilityControl[] = scoreParts.map((part) => ({
+      ...part,
+      isVisible: !hiddenPartIds.has(part.id),
+    }))
+
+    return {
+      parts,
+      isRendering: isPartVisibilityRendering,
+      togglePart: (partId) => {
+        const nextHiddenPartIds = new Set(hiddenPartIds)
+        if (nextHiddenPartIds.has(partId)) {
+          nextHiddenPartIds.delete(partId)
+        } else if (scoreParts.length - nextHiddenPartIds.size > 1) {
+          nextHiddenPartIds.add(partId)
+        }
+        applyPartVisibility(nextHiddenPartIds)
+      },
+      showAllParts: () => applyPartVisibility(new Set()),
+    }
+  }, [
+    applyPartVisibility,
+    hiddenPartIds,
+    isPartVisibilityRendering,
+    scoreParts,
+  ])
 
   useEffect(() => {
     return () => {
@@ -80,9 +296,45 @@ export const ScorePreview = () => {
     }
   }, [])
 
-  const parsedEvents = useMemo(() => {
-    if (!musicXml) return []
-    return parseMusicXmlForEvents(musicXml)
+  const [parsedEventsState, setParsedEventsState] =
+    useState<ParsedEventsState | null>(null)
+  const parsedEvents =
+    musicXml && parsedEventsState?.musicXml === musicXml
+      ? parsedEventsState.events
+      : EMPTY_NOTE_EVENTS
+  const tempoChanges =
+    musicXml && parsedEventsState?.musicXml === musicXml
+      ? parsedEventsState.tempoChanges
+      : []
+
+  useEffect(() => {
+    if (!musicXml) return
+
+    let cancelled = false
+    void parseMusicXmlForEvents(musicXml)
+      .then(({ events, tempoChanges: parsedTempoChanges }) => {
+        if (!cancelled) {
+          setParsedEventsState({
+            musicXml,
+            events,
+            tempoChanges: parsedTempoChanges,
+          })
+        }
+      })
+      .catch((error: unknown) => {
+        logger.error('MusicXML event parsing failed:', error)
+        if (!cancelled) {
+          setParsedEventsState({
+            musicXml,
+            events: EMPTY_NOTE_EVENTS,
+            tempoChanges: [],
+          })
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [musicXml])
 
   const followPlaybackCursor = useCallback(
@@ -169,15 +421,18 @@ export const ScorePreview = () => {
     [followPlaybackCursor, osmdRef, syncPlaybackCursor]
   )
 
-  const { play, stop, playNote, mixerControls } = useAudioPlayer(parsedEvents, {
-    onNoteStart: (event) => syncPlaybackCursor(event.time),
-    onPlaybackStart: startPlaybackCursor,
-    onPlaybackStop: () => {
-      lastCursorEventTimeRef.current = null
-      lastCursorTopRef.current = null
-      osmdRef.current?.cursor?.hide()
-    },
-  })
+  const { play, stop, playNote, mixerControls, playbackControls } =
+    useAudioPlayer(parsedEvents, {
+      tempoChanges,
+      onNoteStart: (event) => syncPlaybackCursor(event.time),
+      onPlaybackStart: startPlaybackCursor,
+      onPlaybackStop: () => {
+        lastCursorEventTimeRef.current = null
+        lastCursorTopRef.current = null
+        osmdRef.current?.cursor?.hide()
+      },
+      onSeek: syncPlaybackCursor,
+    })
 
   const { handlePointerDown, handlePointerUp } = useNoteInteraction(
     containerRef,
@@ -281,7 +536,7 @@ export const ScorePreview = () => {
           <AlertDescription>{renderError}</AlertDescription>
         </Alert>
       ) : (
-        <div className="overflow-x-auto rounded-lg bg-white">
+        <div className="relative overflow-x-auto rounded-lg bg-white">
           <div
             ref={containerRef}
             className="score-preview relative w-full bg-white"
@@ -303,14 +558,42 @@ export const ScorePreview = () => {
               </AlertDescription>
             </Alert>
           )}
+          {visibilityError && (
+            <Alert variant="error">
+              <AlertTitle>エラー</AlertTitle>
+              <AlertDescription>{visibilityError}</AlertDescription>
+            </Alert>
+          )}
+          {(isRendering || isZoomRendering || isPartVisibilityRendering) && (
+            <div
+              className="fixed inset-0 z-40 grid place-items-center bg-white/65 backdrop-blur-[1px]"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 text-sm font-bold text-[#071b47] shadow-xl">
+                <span
+                  className="size-5 animate-spin rounded-full border-2 border-blue-100 border-t-blue-600"
+                  aria-hidden="true"
+                />
+                楽譜を描画しています
+              </div>
+            </div>
+          )}
+          <div
+            aria-hidden="true"
+            style={{ height: `${controlModalHeight}px` }}
+          />
           <ControlModal
             play={play}
             stop={stop}
             mixerControls={mixerControls}
+            playbackControls={playbackControls}
             zoomIn={zoomIn}
             zoomOut={zoomOut}
             zoomPercentage={scoreZoomPercentage}
             isZoomRendering={isZoomRendering}
+            visibilityControls={visibilityControls}
+            onHeightChange={setControlModalHeight}
           />
         </div>
       )}

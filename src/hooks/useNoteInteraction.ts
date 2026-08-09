@@ -1,7 +1,8 @@
 import { type RefObject, useCallback, useMemo, useRef } from 'react'
 
-import { OpenSheetMusicDisplay, PointF2D } from 'opensheetmusicdisplay'
+import type { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 
+import { logger } from '../lib/logger'
 import type { NoteEvent } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
 import type { PlayNoteFn } from './useAudioPlayer'
@@ -109,7 +110,7 @@ export const useNoteInteraction = (
 
   // ノート検索と再生のコアロジック（pointerup から呼ばれる）
   const processNoteClick = useCallback(
-    (clientX: number, clientY: number) => {
+    async (clientX: number, clientY: number) => {
       if (!containerRef.current || !osmdRef.current) return
 
       const osmd = osmdRef.current
@@ -127,6 +128,9 @@ export const useNoteInteraction = (
 
       const osmdX = (clientX - svgRect.left) / (10 * osmd.zoom)
       const osmdY = (clientY - svgRect.top) / (10 * osmd.zoom)
+
+      const { PointF2D } = await import('opensheetmusicdisplay')
+      if (osmdRef.current !== osmd) return
 
       const clickPoint = new PointF2D(osmdX, osmdY)
       const maxDistance = new PointF2D(3, 3)
@@ -202,7 +206,7 @@ export const useNoteInteraction = (
           partId = sourceNote.ParentStaff.ParentInstrument.IdString
         }
       } catch {
-        console.warn('Could not extract part ID from sourceNote.')
+        logger.warn('Could not extract part ID from sourceNote.')
       }
 
       let voiceId = ''
@@ -211,7 +215,7 @@ export const useNoteInteraction = (
           voiceId = String(sourceNote.ParentVoiceEntry.ParentVoice.VoiceId)
         }
       } catch {
-        console.warn('Could not extract voice ID from sourceNote.')
+        logger.warn('Could not extract voice ID from sourceNote.')
       }
 
       // parsedEventsの中から、クリックした音符に該当するイベントを探す
@@ -261,7 +265,7 @@ export const useNoteInteraction = (
           instrumentName = sourceNote.ParentStaff.ParentInstrument.Name
         }
       } catch {
-        console.warn('Could not extract instrument name, defaulting to piano.')
+        logger.warn('Could not extract instrument name, defaulting to piano.')
       }
 
       const samplerId = bestEvent
@@ -332,7 +336,11 @@ export const useNoteInteraction = (
       }
 
       // pointerdown 時の座標を使ってノートを検索・再生
-      processNoteClick(downState.clientX, downState.clientY)
+      void processNoteClick(downState.clientX, downState.clientY).catch(
+        (error: unknown) => {
+          logger.error('Note interaction failed:', error)
+        }
+      )
     },
     [processNoteClick]
   )

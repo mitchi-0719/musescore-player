@@ -1,5 +1,4 @@
-import JSZip from 'jszip'
-import WebMscore from 'webmscore'
+import { logger } from './logger'
 
 interface MusicScoreExport {
   musicXml: string
@@ -26,7 +25,30 @@ type RestoreHarmonyResult = {
   musicXml: string
 }
 
+type MscxChordPlayback = {
+  tremoloMarks: number | null
+}
+
 const HARMONY_TAG_PATTERN = /<harmony\b[\s\S]*?<\/harmony>/g
+const DIRECTION_TAG_PATTERN = /<direction\b[\s\S]*?<\/direction>/g
+const DIRECTION_TYPE_TAG_PATTERN = /<direction-type\b[\s\S]*?<\/direction-type>/
+const NOTE_TAG_PATTERN = /<note\b[\s\S]*?<\/note>/g
+
+const assertPlayableMusicXml = (musicXml: string): void => {
+  const doc = new DOMParser().parseFromString(musicXml, 'application/xml')
+  const hasParserError = Boolean(doc.querySelector('parsererror'))
+  const scoreParts = doc.querySelectorAll('part-list > score-part').length
+  const parts = doc.querySelectorAll('score-partwise > part').length
+  const measures = doc.querySelectorAll(
+    'score-partwise > part > measure'
+  ).length
+
+  if (hasParserError || scoreParts === 0 || parts === 0 || measures === 0) {
+    throw new Error(
+      'MSCZ を MusicXML に変換できませんでした。MuseScore でファイルを開き、最新版の MSCZ として保存し直してください。'
+    )
+  }
+}
 
 const STEP_BY_INDEX = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
 const NATURAL_TPC_BY_STEP: Record<string, number> = {
@@ -97,6 +119,38 @@ const escapeXml = (value: string): string =>
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
 
+const normalizeTextTempoDirections = (musicXml: string): string =>
+  musicXml.replace(DIRECTION_TAG_PATTERN, (direction) => {
+    if (
+      /<metronome\b/.test(direction) ||
+      !/<sound\b[^>]*tempo=/.test(direction)
+    ) {
+      return direction
+    }
+
+    // MuseScore がテンポ記号を Leland Text の私用領域グリフと words に
+    // 分けて出力する場合がある。OSMD ではそのグリフを描画できないため、
+    // 表示されている「= 数値」を標準 MusicXML の metronome に戻す。
+    const directionText = direction
+      .replace(/<[^>]+>/g, '')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&#160;', ' ')
+    const tempoMatch = directionText.match(/=\s*(\d+(?:\.\d+)?)/)
+    if (!tempoMatch || !DIRECTION_TYPE_TAG_PATTERN.test(direction)) {
+      return direction
+    }
+
+    return direction.replace(
+      DIRECTION_TYPE_TAG_PATTERN,
+      `<direction-type>
+          <metronome parentheses="no">
+            <beat-unit>quarter</beat-unit>
+            <per-minute>${tempoMatch[1]}</per-minute>
+            </metronome>
+          </direction-type>`
+    )
+  })
+
 const tpcToMusicXmlPitch = (value: string): MusicXmlPitch | null => {
   if (!value.trim()) return null
 
@@ -124,11 +178,12 @@ const getChordKind = (name: string): ChordKind => {
 
 const findMscxFile = async (fileBinary: Uint8Array): Promise<string | null> => {
   if (fileBinary.byteLength === 0) {
-    console.warn('MSCZバイナリが空のためMSCXを読み込めません')
+    logger.warn('MSCZバイナリが空のためMSCXを読み込めません')
     return null
   }
 
   try {
+    const JSZip = (await import('jszip')).default
     const zip = await JSZip.loadAsync(fileBinary)
     const mscxEntry = Object.values(zip.files).find(
       (entry) => !entry.dir && entry.name.toLowerCase().endsWith('.mscx')
@@ -136,7 +191,7 @@ const findMscxFile = async (fileBinary: Uint8Array): Promise<string | null> => {
 
     return mscxEntry ? await mscxEntry.async('string') : null
   } catch (error) {
-    console.warn('MSCZ内のMSCX読み込みに失敗しました:', error)
+    logger.warn('MSCZ内のMSCX読み込みに失敗しました:', error)
     return null
   }
 }
@@ -161,6 +216,75 @@ const extractMscxHarmonies = (mscx: string): MscxHarmony[] => {
       }
     })
     .filter((harmony): harmony is MscxHarmony => Boolean(harmony?.root))
+}
+
+const extractMscxChordPlayback = (mscx: string): MscxChordPlayback[] => {
+  const doc = new DOMParser().parseFromString(mscx, 'application/xml')
+  if (doc.querySelector('parsererror')) return []
+
+  return Array.from(doc.querySelectorAll('Chord')).map((chord) => {
+    const subtype = getDirectChild(chord, 'TremoloSingleChord')?.querySelector(
+      ':scope > subtype'
+    )?.textContent
+    const denominator = Number(subtype?.match(/^r(\d+)$/)?.[1])
+    const tremoloMarks = Math.log2(denominator) - 2
+
+    return {
+      tremoloMarks:
+        Number.isInteger(tremoloMarks) && tremoloMarks >= 1
+          ? tremoloMarks
+          : null,
+    }
+  })
+}
+
+const addTremoloNotation = (noteXml: string, marks: number): string => {
+  const tremolo = `<tremolo type="single">${marks}</tremolo>`
+
+  if (/<ornaments\b/.test(noteXml)) {
+    return noteXml.replace(/<\/ornaments>/, `${tremolo}</ornaments>`)
+  }
+  if (/<notations\b/.test(noteXml)) {
+    return noteXml.replace(
+      /<\/notations>/,
+      `<ornaments>${tremolo}</ornaments></notations>`
+    )
+  }
+
+  const notation = `<notations><ornaments>${tremolo}</ornaments></notations>`
+  return /<(lyric|play|listen)\b/.test(noteXml)
+    ? noteXml.replace(/<(lyric|play|listen)\b/, `${notation}<$1`)
+    : noteXml.replace(/<\/note>/, `${notation}</note>`)
+}
+
+const restoreTremolos = (
+  musicXml: string,
+  chordPlayback: MscxChordPlayback[]
+): string => {
+  if (!chordPlayback.some(({ tremoloMarks }) => tremoloMarks !== null)) {
+    return musicXml
+  }
+
+  const playableNotes = musicXml
+    .match(NOTE_TAG_PATTERN)
+    ?.filter((note) => !/<rest\b/.test(note) && !/<chord\s*\/?\s*>/.test(note))
+  if (!playableNotes || playableNotes.length !== chordPlayback.length) {
+    logger.warn('Chord数が一致しないためロール補正をスキップしました', {
+      musicXmlChordCount: playableNotes?.length ?? 0,
+      mscxChordCount: chordPlayback.length,
+    })
+    return musicXml
+  }
+
+  let chordIndex = 0
+  return musicXml.replace(NOTE_TAG_PATTERN, (note) => {
+    if (/<rest\b/.test(note) || /<chord\s*\/?\s*>/.test(note)) return note
+
+    const tremoloMarks = chordPlayback[chordIndex++]?.tremoloMarks
+    return tremoloMarks === null || tremoloMarks === undefined
+      ? note
+      : addTremoloNotation(note, tremoloMarks)
+  })
 }
 
 const addPitchXml = (
@@ -210,26 +334,28 @@ const restoreHarmonyFromMscz = async (
   }
 
   const harmonies = extractMscxHarmonies(mscx)
+  const chordPlayback = extractMscxChordPlayback(mscx)
+  const musicXmlWithTremolos = restoreTremolos(musicXml, chordPlayback)
   if (!harmonies.length) {
     return {
-      musicXml,
+      musicXml: musicXmlWithTremolos,
     }
   }
 
   const harmonyMatches = musicXml.match(HARMONY_TAG_PATTERN) ?? []
   if (harmonyMatches.length !== harmonies.length) {
-    console.warn('Harmony数が一致しないためコード補正をスキップしました', {
+    logger.warn('Harmony数が一致しないためコード補正をスキップしました', {
       musicXmlHarmonyCount: harmonyMatches.length,
       mscxHarmonyCount: harmonies.length,
     })
     return {
-      musicXml,
+      musicXml: musicXmlWithTremolos,
     }
   }
 
   let harmonyIndex = 0
   return {
-    musicXml: musicXml.replace(HARMONY_TAG_PATTERN, () =>
+    musicXml: musicXmlWithTremolos.replace(HARMONY_TAG_PATTERN, () =>
       buildHarmonyXml(harmonies[harmonyIndex++])
     ),
   }
@@ -241,20 +367,22 @@ export const convertMsczToMusicXml = async (
   const webMscoreBinary = fileBinary.slice()
   const msczArchiveBinary = fileBinary.slice()
 
+  const WebMscore = (await import('webmscore')).default
   const score = await WebMscore.load('mscz', webMscoreBinary, [], true)
 
   const rawMusicXml = await score.saveXml()
+  assertPlayableMusicXml(rawMusicXml)
   const restoreResult = await restoreHarmonyFromMscz(
     rawMusicXml,
     msczArchiveBinary
   )
-  const musicXml = restoreResult.musicXml
+  const musicXml = normalizeTextTempoDirections(restoreResult.musicXml)
 
   let musicMxl: Uint8Array | null = null
   try {
     musicMxl = await score.saveMxl()
   } catch {
-    console.warn('MXLの生成に失敗しましたが、XMLは生成されました')
+    logger.warn('MXLの生成に失敗しましたが、XMLは生成されました')
   }
 
   return { musicXml, musicMxl }

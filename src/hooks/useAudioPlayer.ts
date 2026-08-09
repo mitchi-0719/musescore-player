@@ -1,16 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import * as Tone from 'tone'
+import type * as ToneModule from 'tone'
 
-import { DRUM_MAP } from '../constants/drum'
+import { DRUM_MAP, MIDI_UNPITCHED_TO_KEY } from '../constants/drum'
 import { PIANO_MAP } from '../constants/piano'
-import type { NoteEvent, SamplerId } from '../lib/musicXmlParser'
+import { logger } from '../lib/logger'
+import type { NoteEvent, SamplerId, TempoChange } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
 
 type AudioPlayerOptions = {
+  tempoChanges?: TempoChange[]
   onNoteStart?: (event: NoteEvent) => void
   onPlaybackStart?: (startTicks: number) => void
   onPlaybackStop?: () => void
+  onSeek?: (ticks: number) => void
+}
+
+export type AudioPlaybackControls = {
+  seek: (time: number) => void
 }
 
 export type AudioPartControl = {
@@ -61,14 +68,43 @@ type SamplerConfig = {
   baseUrl: string
 }
 
+let _toneModule: typeof ToneModule | null = null
+let _toneModulePromise: Promise<typeof ToneModule> | null = null
+const getTone = async (): Promise<typeof ToneModule> => {
+  if (_toneModule) return _toneModule
+
+  if (!_toneModulePromise) {
+    _toneModulePromise = import('tone')
+      .then((module) => {
+        _toneModule = module
+        return module
+      })
+      .catch((error: unknown) => {
+        _toneModulePromise = null
+        throw error
+      })
+  }
+
+  return _toneModulePromise
+}
+
 const SAMPLER_CONFIGS: Record<SamplerId, SamplerConfig> = {
   piano: { urls: PIANO_MAP, baseUrl: '/sounds/piano/' },
   drum: { urls: DRUM_MAP, baseUrl: '/sounds/drums/' },
   clap: { urls: { C4: 'Clap.wav' }, baseUrl: '/sounds/clap/' },
 }
-const PIANO_SAMPLE_KEY_BY_MIDI = new Map<number, string>(
-  Object.keys(PIANO_MAP).map((key) => [Tone.Frequency(key).toMidi(), key])
-)
+const EMPTY_SAMPLER_CONFIGS: Partial<Record<SamplerId, SamplerConfig>> = {}
+let _pianoSampleKeyByMidi: Map<number, string> | null = null
+const getPianoSampleKeyByMidi = (
+  Tone: typeof ToneModule
+): Map<number, string> => {
+  if (!_pianoSampleKeyByMidi) {
+    _pianoSampleKeyByMidi = new Map(
+      Object.keys(PIANO_MAP).map((key) => [Tone.Frequency(key).toMidi(), key])
+    )
+  }
+  return _pianoSampleKeyByMidi
+}
 const DEFAULT_VOLUME = 1
 const MAX_VOLUME = 2
 const TICKS_PER_QUARTER = 192
@@ -80,11 +116,68 @@ const MAX_PART_BOOST_DB = 12
 const MAX_MASTER_BOOST_DB = 6
 const MASTER_LIMITER_THRESHOLD_DB = -1
 const VOLUME_RAMP_SECONDS = 0.03
+// グリッサンドの中間音はサンプルの余韻を重ねず、次の音までに完全停止する。
+const GLISSANDO_RELEASE_SECONDS = 0.005
+const GLISSANDO_VOLUME_MULTIPLIER = 1.25
+// MuseScore と同様、開始音を保持してグリッサンド本体を末尾約1/3へ寄せる。
+const GLISSANDO_PORTION = 0.33
 // ミキサーの表示値は維持したまま、ドラム音源の出力だけを少し抑える。
-const DRUM_VOLUME_MULTIPLIER = 0.8
+const DRUM_VOLUME_MULTIPLIER = 0.5
+// 高密度な連打で音圧が上がりすぎないよう、ロール時の各打音だけを抑える。
+const DRUM_ROLL_VOLUME_MULTIPLIER = 0.2
+const REFERENCE_DYNAMIC_VELOCITY = 80
+const DYNAMIC_GAIN_EXPONENT = 2
+
+const ticksToScoreSeconds = (ticks: number, tempoChanges: TempoChange[]) => {
+  const changes = tempoChanges.length ? tempoChanges : [{ time: 0, bpm: 120 }]
+  let seconds = 0
+  let previousTicks = 0
+  let bpm = changes[0]?.bpm ?? 120
+
+  for (const change of changes) {
+    if (change.time <= previousTicks) {
+      bpm = change.bpm
+      continue
+    }
+    if (change.time >= ticks) break
+    seconds += ((change.time - previousTicks) / TICKS_PER_QUARTER) * (60 / bpm)
+    previousTicks = change.time
+    bpm = change.bpm
+  }
+
+  return (
+    seconds +
+    (Math.max(0, ticks - previousTicks) / TICKS_PER_QUARTER) * (60 / bpm)
+  )
+}
+
+const scoreSecondsToTicks = (seconds: number, tempoChanges: TempoChange[]) => {
+  const changes = tempoChanges.length ? tempoChanges : [{ time: 0, bpm: 120 }]
+  let remainingSeconds = Math.max(0, seconds)
+  let previousTicks = 0
+  let bpm = changes[0]?.bpm ?? 120
+
+  for (const change of changes) {
+    if (change.time <= previousTicks) {
+      bpm = change.bpm
+      continue
+    }
+    const segmentSeconds =
+      ((change.time - previousTicks) / TICKS_PER_QUARTER) * (60 / bpm)
+    if (remainingSeconds <= segmentSeconds) {
+      return previousTicks + (remainingSeconds * bpm * TICKS_PER_QUARTER) / 60
+    }
+    remainingSeconds -= segmentSeconds
+    previousTicks = change.time
+    bpm = change.bpm
+  }
+
+  return previousTicks + (remainingSeconds * bpm * TICKS_PER_QUARTER) / 60
+}
 const clampVolume = (volume: number) =>
   Math.min(MAX_VOLUME, Math.max(0, volume))
 const mixerValueToDecibels = (volume: number, maxBoostDb: number) => {
+  const Tone = _toneModule!
   const clampedVolume = clampVolume(volume)
 
   if (clampedVolume === 0) return -Infinity
@@ -96,24 +189,43 @@ const mixerValueToDecibels = (volume: number, maxBoostDb: number) => {
 }
 const getSamplerVolumeMultiplier = (samplerId: string) =>
   samplerId === 'drum' ? DRUM_VOLUME_MULTIPLIER : 1
+// mf (velocity 80) をミキサーで指定した音量そのものとして扱い、
+// 強弱はその基準に対する相対ゲインにする。サンプル音源でも差が聴き取れるよう、
+// MIDI velocity の比率を二乗してダイナミックレンジを広げる。
+const getDynamicGain = (velocity: number) =>
+  Math.pow(velocity / REFERENCE_DYNAMIC_VELOCITY, DYNAMIC_GAIN_EXPONENT)
 const getDefaultPartState = (): PartMixerState => ({
   volume: DEFAULT_VOLUME,
   isMuted: false,
 })
-const getClosestPianoSampleKey = (midi: number) => {
+const getClosestPianoSampleKey = (
+  midi: number,
+  pianoKeyMap: Map<number, string>
+) => {
   for (let interval = 0; interval < 96; interval += 1) {
-    const upperKey = PIANO_SAMPLE_KEY_BY_MIDI.get(midi + interval)
+    const upperKey = pianoKeyMap.get(midi + interval)
     if (upperKey) return upperKey
 
-    const lowerKey = PIANO_SAMPLE_KEY_BY_MIDI.get(midi - interval)
+    const lowerKey = pianoKeyMap.get(midi - interval)
     if (lowerKey) return lowerKey
   }
 
   return 'C4'
 }
+const getGlissandoPlaybackKey = (
+  samplerId: SamplerId,
+  midi: number,
+  Tone: typeof ToneModule
+) => {
+  if (samplerId === 'clap') return 'C4'
+  if (samplerId === 'drum') return MIDI_UNPITCHED_TO_KEY[midi] ?? null
+  return Tone.Frequency(midi, 'midi').toNote()
+}
 const getRequiredSamplerConfigs = (
-  parsedEvents: NoteEvent[]
+  parsedEvents: NoteEvent[],
+  Tone: typeof ToneModule
 ): Partial<Record<SamplerId, SamplerConfig>> => {
+  const pianoKeyMap = getPianoSampleKeyByMidi(Tone)
   const requiredKeys: Record<SamplerId, Set<string>> = {
     piano: new Set(),
     drum: new Set(),
@@ -123,9 +235,27 @@ const getRequiredSamplerConfigs = (
   parsedEvents.forEach((event) => {
     if (event.isRest) return
 
+    if (
+      event.glissandoTargetMidi !== null &&
+      event.glissandoTargetMidi !== event.midi
+    ) {
+      const direction = event.glissandoTargetMidi > event.midi ? 1 : -1
+      for (
+        let midi = event.midi;
+        midi !== event.glissandoTargetMidi;
+        midi += direction
+      ) {
+        const playbackKey = getGlissandoPlaybackKey(event.samplerId, midi, Tone)
+        if (playbackKey) requiredKeys[event.samplerId].add(playbackKey)
+      }
+    }
+
     if (event.samplerId === 'piano') {
       requiredKeys.piano.add(
-        getClosestPianoSampleKey(Tone.Frequency(event.playbackKey).toMidi())
+        getClosestPianoSampleKey(
+          Tone.Frequency(event.playbackKey).toMidi(),
+          pianoKeyMap
+        )
       )
       return
     }
@@ -152,41 +282,70 @@ const getRequiredSamplerConfigs = (
   )
 }
 const createSamplerFromSharedBuffers = (
-  buffers: Tone.ToneAudioBuffers,
-  sampleKeys: string[]
-) =>
-  new Tone.Sampler({
-    urls: Object.fromEntries(sampleKeys.map((key) => [key, buffers.get(key)])),
+  buffers: ToneModule.ToneAudioBuffers,
+  sampleKeys: string[],
+  release?: number
+) => {
+  const Tone = _toneModule!
+  const urls = Object.fromEntries(
+    sampleKeys.map((key) => [key, buffers.get(key)])
+  )
+
+  if (release === undefined) {
+    return new Tone.Sampler({ urls })
+  }
+
+  return new Tone.Sampler({
+    urls,
+    release,
   })
+}
 
 export const useAudioPlayer = (
   parsedEvents: NoteEvent[],
   options: AudioPlayerOptions = {}
 ) => {
-  const samplers = useRef<Record<string, Tone.Sampler>>({})
+  const samplers = useRef<Record<string, ToneModule.Sampler>>({})
   const sharedSampleBuffersRef = useRef<
-    Partial<Record<SamplerId, Tone.ToneAudioBuffers>>
+    Partial<Record<SamplerId, ToneModule.ToneAudioBuffers>>
   >({})
-  const partSamplersRef = useRef<Record<string, Tone.Sampler>>({})
-  const partChannelsRef = useRef<Record<string, Tone.Channel>>({})
-  const masterChannelRef = useRef<Tone.Channel | null>(null)
-  const masterLimiterRef = useRef<Tone.Limiter | null>(null)
-  const metronomeSynthRef = useRef<Tone.Synth | null>(null)
-  const metronomeChannelRef = useRef<Tone.Channel | null>(null)
-  const metronomeLoopRef = useRef<Tone.Loop | null>(null)
+  const partSamplersRef = useRef<Record<string, ToneModule.Sampler>>({})
+  const glissandoPartSamplersRef = useRef<Record<string, ToneModule.Sampler>>(
+    {}
+  )
+  const activeGlissandoSourcesRef = useRef<Set<ToneModule.ToneBufferSource>>(
+    new Set()
+  )
+  const partChannelsRef = useRef<Record<string, ToneModule.Channel>>({})
+  const masterChannelRef = useRef<ToneModule.Channel | null>(null)
+  const masterLimiterRef = useRef<ToneModule.Limiter | null>(null)
+  const metronomeSynthRef = useRef<ToneModule.Synth | null>(null)
+  const metronomeChannelRef = useRef<ToneModule.Channel | null>(null)
+  const metronomeLoopRef = useRef<ToneModule.Loop | null>(null)
   const isPlaying = useScoreStore((state) => state.isPlaying)
+  const tempoPercentage = useScoreStore((state) => state.tempoPercentage)
+  const highlightedNoteTime = useScoreStore(
+    (state) => state.highlightedNoteTime
+  )
   const setIsPlaying = useScoreStore((state) => state.setIsPlaying)
+  const setCurrentTime = useScoreStore((state) => state.setCurrentTime)
+  const setTotalDuration = useScoreStore((state) => state.setTotalDuration)
+  const setHighlightedNote = useScoreStore((state) => state.setHighlightedNote)
   const setStoreVolume = useScoreStore((state) => state.setVolume)
-  const partRef = useRef<Tone.Part | null>(null)
+  const partRef = useRef<ToneModule.Part | null>(null)
+  const tempoScheduleIdsRef = useRef<number[]>([])
+  const tempoMultiplierRef = useRef(tempoPercentage / 100)
+  const playbackPositionTicksRef = useRef(highlightedNoteTime ?? 0)
   const onNoteStartRef = useRef(options.onNoteStart)
   const onPlaybackStartRef = useRef(options.onPlaybackStart)
   const onPlaybackStopRef = useRef(options.onPlaybackStop)
+  const onSeekRef = useRef(options.onSeek)
   const hasObservedPlaybackStateRef = useRef(false)
   const activePartIdsRef = useRef<Set<string>>(new Set())
   const measureStartTicksRef = useRef<Set<number>>(new Set())
-  const [loadedSampleSignature, setLoadedSampleSignature] = useState<
-    string | null
-  >(null)
+  const [loadedSamplerConfigs, setLoadedSamplerConfigs] = useState<Partial<
+    Record<SamplerId, SamplerConfig>
+  > | null>(null)
   const [mixerState, setMixerState] = useState<MixerState>({
     masterVolume: DEFAULT_VOLUME,
     metronomeVolume: DEFAULT_VOLUME,
@@ -196,20 +355,105 @@ export const useAudioPlayer = (
     parts: {},
   })
   const mixerStateRef = useRef(mixerState)
+  const [toneReady, setToneReady] = useState(false)
+
+  const scoreTimeline = useMemo(() => {
+    const tempoChanges = options.tempoChanges ?? []
+    const totalTicks = parsedEvents.reduce(
+      (latest, event) => Math.max(latest, event.time + event.duration),
+      0
+    )
+    return {
+      tempoChanges,
+      totalTicks,
+      totalDuration: ticksToScoreSeconds(totalTicks, tempoChanges),
+    }
+  }, [options.tempoChanges, parsedEvents])
 
   useEffect(() => {
     mixerStateRef.current = mixerState
   }, [mixerState])
 
   useEffect(() => {
+    setTotalDuration(scoreTimeline.totalDuration)
+  }, [scoreTimeline.totalDuration, setTotalDuration])
+
+  useEffect(() => {
+    // 停止中に楽譜上の音符を選んだ場合も、次回の開始位置へ反映する。
+    if (!isPlaying && highlightedNoteTime !== null) {
+      playbackPositionTicksRef.current = highlightedNoteTime
+    }
+  }, [highlightedNoteTime, isPlaying, scoreTimeline.totalTicks])
+
+  useEffect(() => {
+    tempoMultiplierRef.current = tempoPercentage / 100
+
+    if (!toneReady || !_toneModule) return
+
+    const transport = _toneModule.getTransport()
+    const currentTicks = Number(transport.ticks)
+    const activeTempo = (options.tempoChanges ?? []).reduce(
+      (bpm, change) => (change.time <= currentTicks ? change.bpm : bpm),
+      options.tempoChanges?.[0]?.bpm ?? 120
+    )
+    transport.bpm.value = activeTempo * tempoMultiplierRef.current
+  }, [options.tempoChanges, tempoPercentage, toneReady])
+
+  useEffect(() => {
     onNoteStartRef.current = options.onNoteStart
     onPlaybackStartRef.current = options.onPlaybackStart
     onPlaybackStopRef.current = options.onPlaybackStop
-  }, [options.onNoteStart, options.onPlaybackStart, options.onPlaybackStop])
+    onSeekRef.current = options.onSeek
+  }, [
+    options.onNoteStart,
+    options.onPlaybackStart,
+    options.onPlaybackStop,
+    options.onSeek,
+  ])
 
-  const ticksToSeconds = useCallback((ticks: number) => {
-    return Tone.Time(`${ticks}i`).toSeconds()
-  }, [])
+  useEffect(() => {
+    if (!isPlaying || !toneReady || !_toneModule) return
+
+    const updatePosition = () => {
+      const transport = _toneModule!.getTransport()
+      const ticks = Math.min(scoreTimeline.totalTicks, Number(transport.ticks))
+      playbackPositionTicksRef.current = ticks
+      const scoreTime = ticksToScoreSeconds(ticks, scoreTimeline.tempoChanges)
+      setCurrentTime(scoreTime)
+
+      if (scoreTimeline.totalTicks > 0 && ticks >= scoreTimeline.totalTicks) {
+        setHighlightedNote(scoreTimeline.totalTicks)
+        setIsPlaying(false)
+        return
+      }
+    }
+    const intervalId = window.setInterval(updatePosition, 100)
+
+    return () => window.clearInterval(intervalId)
+  }, [
+    isPlaying,
+    scoreTimeline,
+    setCurrentTime,
+    setHighlightedNote,
+    setIsPlaying,
+    toneReady,
+  ])
+
+  // Tone.js の遅延ロード：parsedEvents が存在したら初めてロードする
+  useEffect(() => {
+    if (parsedEvents.length === 0) return
+    let cancelled = false
+    void getTone()
+      .then(() => {
+        if (!cancelled) setToneReady(true)
+      })
+      .catch((error: unknown) => {
+        logger.error('Tone.js loading failed:', error)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [parsedEvents])
 
   const partDescriptors = useMemo(() => {
     const parts = new Map<string, string>()
@@ -250,10 +494,14 @@ export const useAudioPlayer = (
     }))
   }, [parsedEvents])
 
-  const requiredSamplerConfigs = useMemo(
-    () => getRequiredSamplerConfigs(parsedEvents),
-    [parsedEvents]
-  )
+  const requiredSamplerConfigs = useMemo(() => {
+    if (!toneReady || !_toneModule || parsedEvents.length === 0) {
+      return EMPTY_SAMPLER_CONFIGS
+    }
+
+    return getRequiredSamplerConfigs(parsedEvents, _toneModule)
+  }, [parsedEvents, toneReady])
+
   const requiredSampleSignature = useMemo(
     () =>
       (Object.entries(requiredSamplerConfigs) as [SamplerId, SamplerConfig][])
@@ -288,6 +536,8 @@ export const useAudioPlayer = (
   }, [measureStartTicks])
 
   useEffect(() => {
+    if (!toneReady) return
+    const Tone = _toneModule!
     masterLimiterRef.current = new Tone.Limiter(
       MASTER_LIMITER_THRESHOLD_DB
     ).toDestination()
@@ -335,7 +585,7 @@ export const useAudioPlayer = (
       masterChannelRef.current = null
       masterLimiterRef.current = null
     }
-  }, [])
+  }, [toneReady])
 
   useEffect(() => {
     let isDisposed = false
@@ -349,15 +599,18 @@ export const useAudioPlayer = (
     if (configEntries.length === 0) return
 
     let loadedCount = 0
-    const sharedBuffers: Partial<Record<SamplerId, Tone.ToneAudioBuffers>> = {}
+    const sharedBuffers: Partial<
+      Record<SamplerId, ToneModule.ToneAudioBuffers>
+    > = {}
     const handleBuffersLoaded = () => {
       loadedCount += 1
       if (!isDisposed && loadedCount === configEntries.length) {
-        setLoadedSampleSignature(requiredSampleSignature)
+        setLoadedSamplerConfigs(requiredSamplerConfigs)
       }
     }
 
     configEntries.forEach(([samplerId, config]) => {
+      const Tone = _toneModule!
       sharedBuffers[samplerId] = new Tone.ToneAudioBuffers({
         urls: config.urls,
         baseUrl: config.baseUrl,
@@ -375,11 +628,11 @@ export const useAudioPlayer = (
 
   useEffect(() => {
     const masterChannel = masterChannelRef.current
-    if (!masterChannel || loadedSampleSignature !== requiredSampleSignature) {
+    if (!masterChannel || loadedSamplerConfigs !== requiredSamplerConfigs) {
       return
     }
 
-    const currentSamplers: Record<string, Tone.Sampler> = {}
+    const currentSamplers: Record<string, ToneModule.Sampler> = {}
     const configEntries = Object.entries(requiredSamplerConfigs) as [
       SamplerId,
       SamplerConfig,
@@ -400,15 +653,16 @@ export const useAudioPlayer = (
       Object.values(currentSamplers).forEach((sampler) => sampler.dispose())
       samplers.current = {}
     }
-  }, [loadedSampleSignature, requiredSampleSignature, requiredSamplerConfigs])
+  }, [loadedSamplerConfigs, requiredSamplerConfigs])
 
   useEffect(() => {
     const masterChannel = masterChannelRef.current
-    if (!masterChannel || loadedSampleSignature !== requiredSampleSignature) {
+    if (!masterChannel || loadedSamplerConfigs !== requiredSamplerConfigs) {
       return
     }
-    const channels: Record<string, Tone.Channel> = {}
-    const partSamplers: Record<string, Tone.Sampler> = {}
+    const channels: Record<string, ToneModule.Channel> = {}
+    const partSamplers: Record<string, ToneModule.Sampler> = {}
+    const glissandoPartSamplers: Record<string, ToneModule.Sampler> = {}
     const currentMixerState = mixerStateRef.current
     const hasSolo =
       currentMixerState.soloPartId !== null &&
@@ -418,6 +672,7 @@ export const useAudioPlayer = (
       const partState =
         currentMixerState.parts[part.id] ?? getDefaultPartState()
 
+      const Tone = _toneModule!
       channels[part.id] = new Tone.Channel({
         volume: mixerValueToDecibels(partState.volume, MAX_PART_BOOST_DB),
         mute:
@@ -439,22 +694,31 @@ export const useAudioPlayer = (
         buffers,
         Object.keys(config.urls)
       ).connect(channel)
+      glissandoPartSamplers[key] = createSamplerFromSharedBuffers(
+        buffers,
+        Object.keys(config.urls),
+        GLISSANDO_RELEASE_SECONDS
+      ).connect(channel)
     })
 
     partChannelsRef.current = channels
     partSamplersRef.current = partSamplers
+    glissandoPartSamplersRef.current = glissandoPartSamplers
 
     return () => {
       Object.values(partSamplers).forEach((sampler) => sampler.dispose())
+      Object.values(glissandoPartSamplers).forEach((sampler) =>
+        sampler.dispose()
+      )
       Object.values(channels).forEach((channel) => channel.dispose())
       partSamplersRef.current = {}
+      glissandoPartSamplersRef.current = {}
       partChannelsRef.current = {}
     }
   }, [
-    loadedSampleSignature,
+    loadedSamplerConfigs,
     partDescriptors,
     partSamplerDescriptors,
-    requiredSampleSignature,
     requiredSamplerConfigs,
   ])
 
@@ -496,11 +760,30 @@ export const useAudioPlayer = (
       partRef.current.dispose()
       partRef.current = null
     }
+    if (!toneReady || !_toneModule) return
 
     const partEvents = parsedEvents.map((event) => ({
-      time: ticksToSeconds(event.time),
+      time: `${event.time}i`,
       event,
     }))
+
+    const Tone = _toneModule!
+    const transport = Tone.getTransport()
+    tempoScheduleIdsRef.current.forEach((id) => transport.clear(id))
+    tempoScheduleIdsRef.current = []
+
+    const tempoChanges = options.tempoChanges ?? []
+    transport.bpm.value =
+      (tempoChanges[0]?.bpm ?? 120) * tempoMultiplierRef.current
+    tempoChanges.slice(1).forEach((change) => {
+      const id = transport.schedule((time) => {
+        transport.bpm.setValueAtTime(
+          change.bpm * tempoMultiplierRef.current,
+          time
+        )
+      }, `${change.time}i`)
+      tempoScheduleIdsRef.current.push(id)
+    })
 
     partRef.current = new Tone.Part((time, value) => {
       const { event } = value
@@ -512,14 +795,146 @@ export const useAudioPlayer = (
 
       const sampler =
         partSamplersRef.current[`${event.partId}:${event.samplerId}`]
-      const velocity = getSamplerVolumeMultiplier(event.samplerId)
+      const samplerVolumeMultiplier = getSamplerVolumeMultiplier(
+        event.samplerId
+      )
 
       if (sampler?.loaded) {
+        if (
+          event.samplerId === 'piano' &&
+          event.glissandoMode !== null &&
+          event.glissandoTargetMidi !== null &&
+          event.glissandoDuration !== null &&
+          event.glissandoDuration > 0 &&
+          event.glissandoTargetMidi !== event.midi
+        ) {
+          const buffers = sharedSampleBuffersRef.current.piano
+          const channel = partChannelsRef.current[event.partId]
+          if (!buffers || !channel) return
+
+          const endTime = time + Tone.Ticks(event.glissandoDuration).toSeconds()
+          const pianoKeyMap = getPianoSampleKeyByMidi(Tone)
+          const sampleKeys = Array.from(
+            new Set([
+              getClosestPianoSampleKey(event.midi, pianoKeyMap),
+              getClosestPianoSampleKey(event.glissandoTargetMidi, pianoKeyMap),
+            ])
+          )
+          const sourceGain =
+            (getDynamicGain(event.velocity) * GLISSANDO_VOLUME_MULTIPLIER) /
+            (sampleKeys.length === 1 ? 1 : 1.25)
+
+          sampleKeys.forEach((sampleKey) => {
+            const buffer = buffers.get(sampleKey)
+            if (!buffer?.loaded) return
+
+            const sampleMidi = Tone.Frequency(sampleKey).toMidi()
+            const startRate = 2 ** ((event.midi - sampleMidi) / 12)
+            const endRate =
+              2 ** ((event.glissandoTargetMidi! - sampleMidi) / 12)
+            const source = new Tone.ToneBufferSource({
+              url: buffer,
+              playbackRate: startRate,
+              fadeOut: GLISSANDO_RELEASE_SECONDS,
+            }).connect(channel)
+
+            activeGlissandoSourcesRef.current.add(source)
+            source.onended = () => {
+              activeGlissandoSourcesRef.current.delete(source)
+              source.dispose()
+            }
+            source.playbackRate.linearRampToValueAtTime(endRate, endTime)
+            source.start(time, 0, `${event.glissandoDuration}i`, sourceGain)
+          })
+          return
+        }
+
+        if (
+          event.glissandoTargetMidi !== null &&
+          event.glissandoDuration !== null &&
+          event.glissandoDuration > 0 &&
+          event.glissandoTargetMidi !== event.midi
+        ) {
+          const glissandoSampler =
+            glissandoPartSamplersRef.current[
+              `${event.partId}:${event.samplerId}`
+            ]
+          if (!glissandoSampler?.loaded) return
+
+          const direction = event.glissandoTargetMidi > event.midi ? 1 : -1
+          const stepCount = Math.abs(event.glissandoTargetMidi - event.midi)
+          const glissandoWindow = event.glissandoDuration * GLISSANDO_PORTION
+          const headDuration = event.glissandoDuration - glissandoWindow
+          const intermediateCount = Math.max(1, stepCount - 1)
+          const stepDuration = glissandoWindow / intermediateCount
+
+          // 頭の音を約2/3保持し、中間音は末尾1/3で重ならないよう順に鳴らす。
+          sampler.triggerAttackRelease(
+            event.playbackKey,
+            `${Math.min(event.duration, headDuration)}i`,
+            time,
+            getDynamicGain(event.velocity) *
+              samplerVolumeMultiplier *
+              GLISSANDO_VOLUME_MULTIPLIER
+          )
+
+          for (let index = 1; index < stepCount; index += 1) {
+            const playbackKey = getGlissandoPlaybackKey(
+              event.samplerId,
+              event.midi + index * direction,
+              Tone
+            )
+            if (!playbackKey) continue
+
+            glissandoSampler.triggerAttackRelease(
+              playbackKey,
+              `${Math.max(1, stepDuration * 0.95)}i`,
+              time +
+                Tone.Ticks(
+                  headDuration + (index - 1) * stepDuration
+                ).toSeconds(),
+              getDynamicGain(event.velocity) *
+                samplerVolumeMultiplier *
+                GLISSANDO_VOLUME_MULTIPLIER
+            )
+          }
+          return
+        }
+
+        if (
+          event.samplerId === 'drum' &&
+          event.rollSubdivision !== null &&
+          event.rollSubdivision > 0
+        ) {
+          const hitDuration = Math.min(
+            event.rollSubdivision * 0.8,
+            event.duration
+          )
+          for (
+            let offset = 0;
+            offset < event.duration;
+            offset += event.rollSubdivision
+          ) {
+            sampler.triggerAttackRelease(
+              event.playbackKey,
+              `${hitDuration}i`,
+              time + Tone.Ticks(offset).toSeconds(),
+              getDynamicGain(event.velocity) *
+                samplerVolumeMultiplier *
+                DRUM_ROLL_VOLUME_MULTIPLIER
+            )
+          }
+          return
+        }
+
+        // MuseScore の既定値（staccatoGateTime = 50）に合わせて、
+        // 発音時間だけを記譜音価の 50% にする。次の音の開始時刻は変えない。
+        const gateTime = event.isStaccato ? 0.5 : 1
         sampler.triggerAttackRelease(
           event.playbackKey,
-          ticksToSeconds(event.duration),
+          `${event.duration * gateTime}i`,
           time,
-          velocity
+          getDynamicGain(event.velocity) * samplerVolumeMultiplier
         )
       }
     }, partEvents)
@@ -528,46 +943,147 @@ export const useAudioPlayer = (
 
     return () => {
       partRef.current?.dispose()
+      tempoScheduleIdsRef.current.forEach((id) => transport.clear(id))
+      tempoScheduleIdsRef.current = []
     }
-  }, [parsedEvents, ticksToSeconds])
+  }, [options.tempoChanges, parsedEvents, toneReady])
 
   // isPlaying に応じて Transport の開始/停止を同期
   useEffect(() => {
+    if (!toneReady) return
+    const Tone = _toneModule!
+
     if (isPlaying) {
+      // Tone.js の tick 記法（`123i`）には整数だけを渡す。
+      // 小数tickを文字列化すると、一部のモバイルブラウザで桁違いの
+      // Transport位置として解釈されることがある。
       const startTicks = Math.max(
         0,
-        useScoreStore.getState().highlightedNoteTime ?? 0
+        Math.round(playbackPositionTicksRef.current)
       )
-      const startSeconds = ticksToSeconds(startTicks)
+      playbackPositionTicksRef.current = startTicks
+      const transport = Tone.getTransport()
+      const activeTempo = (options.tempoChanges ?? []).reduce(
+        (bpm, change) => (change.time <= startTicks ? change.bpm : bpm),
+        options.tempoChanges?.[0]?.bpm ?? 120
+      )
+      transport.bpm.value = activeTempo * tempoMultiplierRef.current
 
       onPlaybackStartRef.current?.(startTicks)
       metronomeLoopRef.current?.start(0)
-      Tone.getTransport().start(undefined, startSeconds)
+      // 前回停止時の内部タイムラインが残っていても、開始offsetを必ず適用する。
+      if (transport.state !== 'stopped') transport.stop()
+      transport.start(undefined, `${startTicks}i`)
+      requestAnimationFrame(() => {
+        const appliedTicks = Number(transport.ticks)
+        const maximumExpectedAdvance = TICKS_PER_QUARTER / 4
+        if (Math.abs(appliedTicks - startTicks) > maximumExpectedAdvance) {
+          logger.warn('[playback-position] correcting start position', {
+            requestedTicks: startTicks,
+            appliedTicks,
+          })
+          transport.ticks = startTicks
+        }
+      })
     } else {
       Tone.getDraw().cancel()
       Tone.getTransport().stop()
       metronomeLoopRef.current?.stop()
       Object.values(samplers.current).forEach((s) => s.releaseAll())
       Object.values(partSamplersRef.current).forEach((s) => s.releaseAll())
+      Object.values(glissandoPartSamplersRef.current).forEach((s) =>
+        s.releaseAll()
+      )
+      activeGlissandoSourcesRef.current.forEach((source) => {
+        source.stop()
+      })
+      activeGlissandoSourcesRef.current.clear()
       metronomeSynthRef.current?.triggerRelease()
       if (hasObservedPlaybackStateRef.current) {
         onPlaybackStopRef.current?.()
       }
     }
     hasObservedPlaybackStateRef.current = true
-  }, [isPlaying, ticksToSeconds])
+  }, [isPlaying, options.tempoChanges, scoreTimeline.totalTicks, toneReady])
 
   const play = useCallback(async () => {
+    const Tone = await getTone()
     await Tone.start()
+
+    // 最後まで再生した後は、再生ボタンで先頭から再開する。
+    if (
+      scoreTimeline.totalTicks > 0 &&
+      playbackPositionTicksRef.current >= scoreTimeline.totalTicks
+    ) {
+      playbackPositionTicksRef.current = 0
+      setCurrentTime(0)
+      setHighlightedNote(0)
+      onSeekRef.current?.(0)
+    }
     setIsPlaying(true)
-  }, [setIsPlaying])
+  }, [
+    scoreTimeline.totalTicks,
+    setCurrentTime,
+    setHighlightedNote,
+    setIsPlaying,
+  ])
 
   const stop = useCallback(() => {
+    if (_toneModule) {
+      const transport = _toneModule.getTransport()
+      if (transport.state === 'started') {
+        const stoppedTicks = Math.min(
+          scoreTimeline.totalTicks,
+          Math.max(0, Number(transport.ticks))
+        )
+        playbackPositionTicksRef.current = stoppedTicks
+        setCurrentTime(
+          ticksToScoreSeconds(stoppedTicks, scoreTimeline.tempoChanges)
+        )
+        setHighlightedNote(stoppedTicks)
+      }
+    }
     setIsPlaying(false)
-  }, [setIsPlaying])
+  }, [scoreTimeline, setCurrentTime, setHighlightedNote, setIsPlaying])
+
+  const seek = useCallback(
+    (time: number) => {
+      const clampedTime = Math.min(
+        scoreTimeline.totalDuration,
+        Math.max(0, time)
+      )
+      const ticks = Math.round(
+        Math.min(
+          scoreTimeline.totalTicks,
+          scoreSecondsToTicks(clampedTime, scoreTimeline.tempoChanges)
+        )
+      )
+      playbackPositionTicksRef.current = ticks
+      setCurrentTime(clampedTime)
+      setHighlightedNote(ticks)
+      onSeekRef.current?.(ticks)
+      if (_toneModule) {
+        const transport = _toneModule.getTransport()
+        // 停止中は次回の start offset だけで位置を適用する。
+        // 停止済みTransportのticksをここで変更すると、Tone.js内部の
+        // タイムラインと開始offsetが競合して末尾へ移動することがある。
+        if (transport.state === 'started') {
+          transport.ticks = ticks
+        }
+        const activeTempo = scoreTimeline.tempoChanges.reduce(
+          (bpm, change) => (change.time <= ticks ? change.bpm : bpm),
+          scoreTimeline.tempoChanges[0]?.bpm ?? 120
+        )
+        transport.bpm.value = activeTempo * tempoMultiplierRef.current
+      }
+    },
+    [scoreTimeline, setCurrentTime, setHighlightedNote]
+  )
 
   const playNote: PlayNoteFn = useCallback(
     (samplerId, playbackKey, durationBeats) => {
+      const Tone = _toneModule
+      if (!Tone) return
       const sampler = samplers.current[samplerId] ?? samplers.current.piano
       if (!sampler || !sampler.loaded) return
 
@@ -792,7 +1308,11 @@ export const useAudioPlayer = (
     ]
   )
 
-  return { play, stop, playNote, mixerControls }
+  const playbackControls: AudioPlaybackControls = {
+    seek,
+  }
+
+  return { play, stop, playNote, mixerControls, playbackControls }
 }
 
 export type PlayNoteFn = (
@@ -803,9 +1323,11 @@ export type PlayNoteFn = (
 
 // React 型を使わず構造的に表現
 export const createPlayNote = (samplersRef: {
-  current: Record<string, Tone.Sampler> | undefined | null
+  current: Record<string, ToneModule.Sampler> | undefined | null
 }): PlayNoteFn => {
   return (samplerId, playbackKey, durationBeats) => {
+    const Tone = _toneModule
+    if (!Tone) return
     const sampler =
       samplersRef.current?.[samplerId] ?? samplersRef.current?.piano
     if (!sampler || !sampler.loaded) return
