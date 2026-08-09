@@ -56,7 +56,7 @@ export const ControlModal: FC<ControlModalProps> = ({
   return (
     <aside
       ref={modalRef}
-      className="fixed right-0 bottom-0 left-0 z-50 rounded-t-2xl border border-slate-200 bg-white shadow-[0_-8px_30px_rgba(15,23,42,0.12)]"
+      className="fixed right-0 bottom-0 left-0 z-50 rounded-t-2xl border border-slate-200 bg-white shadow-[0_-8px_30px_rgba(15,23,42,0.12)] select-none"
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
       onTouchStart={(event) => event.stopPropagation()}
