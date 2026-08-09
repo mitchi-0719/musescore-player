@@ -5,6 +5,7 @@ import type {
   AudioPlaybackControls,
 } from '../../hooks/useAudioPlayer'
 import { useOnOffState } from '../../hooks/useOnOffState'
+import { tracePlayback } from '../../lib/playbackTrace'
 import { useScoreStore } from '../../stores/useScoreStore'
 import { Icon } from '../ui/Icon'
 import { MixerPanel, type ScoreVisibilityControls } from './MixerPanel'
@@ -116,7 +117,38 @@ const PlaybackPositionControl: FC<{
   const totalDuration = useScoreStore((state) => state.totalDuration)
 
   const updateSlider = (time: number) => {
+    const state = useScoreStore.getState()
+    tracePlayback('seek-bar', 'input', {
+      inputTime: time,
+      storeCurrentTimeBeforeSeek: state.currentTime,
+      totalDuration: state.totalDuration,
+      isPlaying: state.isPlaying,
+    })
     playbackControls.seek(time)
+  }
+
+  const tracePointerEvent = (
+    event: React.PointerEvent<HTMLInputElement>,
+    eventName: 'pointer-down' | 'pointer-up' | 'pointer-cancel'
+  ) => {
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const ratio = Math.min(
+      1,
+      Math.max(0, (event.clientX - bounds.left) / bounds.width)
+    )
+    const state = useScoreStore.getState()
+
+    tracePlayback('seek-bar', eventName, {
+      domValue: Number(event.currentTarget.value),
+      expectedTimeFromPointer: ratio * state.totalDuration,
+      clientX: event.clientX,
+      rangeLeft: bounds.left,
+      rangeWidth: bounds.width,
+      pointerType: event.pointerType,
+      storeCurrentTime: state.currentTime,
+      totalDuration: state.totalDuration,
+      isPlaying: state.isPlaying,
+    })
   }
 
   return (
@@ -132,6 +164,21 @@ const PlaybackPositionControl: FC<{
         className="player-range min-w-0 flex-1 disabled:opacity-40"
         aria-label="再生位置"
         onInput={(event) => updateSlider(Number(event.currentTarget.value))}
+        onChange={(event) =>
+          tracePlayback('seek-bar', 'change', {
+            domValue: Number(event.currentTarget.value),
+            storeCurrentTime: useScoreStore.getState().currentTime,
+          })
+        }
+        onPointerDown={(event) => tracePointerEvent(event, 'pointer-down')}
+        onPointerUp={(event) => tracePointerEvent(event, 'pointer-up')}
+        onPointerCancel={(event) => tracePointerEvent(event, 'pointer-cancel')}
+        onTouchEnd={(event) =>
+          tracePlayback('seek-bar', 'touch-end', {
+            domValue: Number(event.currentTarget.value),
+            storeCurrentTime: useScoreStore.getState().currentTime,
+          })
+        }
       />
       <span className="w-9 shrink-0 text-right">
         {formatTime(totalDuration)}

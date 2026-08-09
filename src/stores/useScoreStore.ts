@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 
+import { tracePlayback } from '../lib/playbackTrace'
+
 export type PlayerHandle = {
   play: () => Promise<void>
   pause: () => void
@@ -171,9 +173,18 @@ export const useScoreStore = create<ScoreState>((set) => ({
   setIsPlaying: (v) =>
     set((state) => (state.isPlaying === v ? state : { isPlaying: v })),
   setCurrentTime: (t) =>
-    set((state) =>
-      Math.abs(state.currentTime - t) < 0.01 ? state : { currentTime: t }
-    ),
+    set((state) => {
+      if (Math.abs(state.currentTime - t) < 0.01) return state
+      if (Math.abs(state.currentTime - t) >= 0.5) {
+        tracePlayback('score-store', 'current-time-jump', {
+          previousTime: state.currentTime,
+          nextTime: t,
+          totalDuration: state.totalDuration,
+          isPlaying: state.isPlaying,
+        })
+      }
+      return { currentTime: t }
+    }),
   setTempoPercentage: (percentage) =>
     set((state) =>
       state.tempoPercentage === percentage
