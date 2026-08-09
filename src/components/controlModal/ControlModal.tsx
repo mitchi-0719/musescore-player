@@ -135,14 +135,16 @@ const PlaybackPositionControl: FC<{
     []
   )
 
-  const commitSeek = () => {
+  const commitSeek = (time = sliderTimeRef.current) => {
     if (seekCommitTimerRef.current !== null) {
       window.clearTimeout(seekCommitTimerRef.current)
       seekCommitTimerRef.current = null
     }
     if (!hasPendingSeekRef.current) return
+    sliderTimeRef.current = time
+    setSliderTime(time)
     hasPendingSeekRef.current = false
-    playbackControls.seek(sliderTimeRef.current)
+    playbackControls.seek(time)
   }
 
   const updateSlider = (time: number) => {
@@ -152,7 +154,7 @@ const PlaybackPositionControl: FC<{
     if (seekCommitTimerRef.current !== null) {
       window.clearTimeout(seekCommitTimerRef.current)
     }
-    seekCommitTimerRef.current = window.setTimeout(commitSeek, 150)
+    seekCommitTimerRef.current = window.setTimeout(() => commitSeek(), 150)
   }
 
   return (
@@ -168,9 +170,13 @@ const PlaybackPositionControl: FC<{
         className="player-range min-w-0 flex-1 disabled:opacity-40"
         aria-label="再生位置"
         onChange={(event) => updateSlider(Number(event.target.value))}
-        onKeyUp={commitSeek}
-        onPointerUp={commitSeek}
-        onBlur={commitSeek}
+        onKeyUp={(event) => commitSeek(Number(event.currentTarget.value))}
+        onPointerUp={(event) => commitSeek(Number(event.currentTarget.value))}
+        onPointerCancel={(event) =>
+          commitSeek(Number(event.currentTarget.value))
+        }
+        onTouchEnd={(event) => commitSeek(Number(event.currentTarget.value))}
+        onBlur={(event) => commitSeek(Number(event.currentTarget.value))}
       />
       <span className="w-9 shrink-0 text-right">
         {formatTime(totalDuration)}

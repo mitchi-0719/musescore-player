@@ -1021,8 +1021,24 @@ export const useAudioPlayer = (
   const play = useCallback(async () => {
     const Tone = await getTone()
     await Tone.start()
+
+    // 最後まで再生した後は、再生ボタンで先頭から再開する。
+    if (
+      scoreTimeline.totalTicks > 0 &&
+      playbackPositionTicksRef.current >= scoreTimeline.totalTicks
+    ) {
+      playbackPositionTicksRef.current = 0
+      setCurrentTime(0)
+      setHighlightedNote(0)
+      onSeekRef.current?.(0)
+    }
     setIsPlaying(true)
-  }, [setIsPlaying])
+  }, [
+    scoreTimeline.totalTicks,
+    setCurrentTime,
+    setHighlightedNote,
+    setIsPlaying,
+  ])
 
   const stop = useCallback(() => {
     if (_toneModule) {
