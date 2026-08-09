@@ -28,6 +28,30 @@ body {
   height: 14px;
 }
 
+@media (pointer: coarse) {
+  .player-range {
+    height: 24px;
+  }
+
+  .player-range::-webkit-slider-runnable-track {
+    height: 6px;
+  }
+
+  .player-range::-webkit-slider-thumb {
+    width: 20px;
+    height: 20px;
+  }
+
+  .player-range::-moz-range-track {
+    height: 6px;
+  }
+
+  .player-range::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+  }
+}
+
 /* OSMD が SVG として描画する歌詞・コードなどをドラッグ選択させない。 */
 .score-preview,
 .score-preview * {
