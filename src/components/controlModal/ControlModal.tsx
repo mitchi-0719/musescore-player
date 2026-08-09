@@ -1,10 +1,11 @@
-import { type FC, useEffect, useRef, useState } from 'react'
+import { type FC, useEffect, useRef } from 'react'
 
 import type {
   AudioMixerControls,
   AudioPlaybackControls,
 } from '../../hooks/useAudioPlayer'
 import { useOnOffState } from '../../hooks/useOnOffState'
+import { tracePlayback } from '../../lib/playbackTrace'
 import { useScoreStore } from '../../stores/useScoreStore'
 import { Icon } from '../ui/Icon'
 import { MixerPanel, type ScoreVisibilityControls } from './MixerPanel'
@@ -55,7 +56,7 @@ export const ControlModal: FC<ControlModalProps> = ({
   return (
     <aside
       ref={modalRef}
-      className="fixed right-0 bottom-0 left-0 z-50 rounded-t-2xl border border-slate-200 bg-white shadow-[0_-8px_30px_rgba(15,23,42,0.12)]"
+      className="fixed right-0 bottom-0 left-0 z-50 rounded-t-2xl border border-slate-200 bg-white shadow-[0_-8px_30px_rgba(15,23,42,0.12)] select-none"
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
       onTouchStart={(event) => event.stopPropagation()}
@@ -114,63 +115,70 @@ const PlaybackPositionControl: FC<{
 }> = ({ playbackControls }) => {
   const currentTime = useScoreStore((state) => state.currentTime)
   const totalDuration = useScoreStore((state) => state.totalDuration)
-  const [sliderTime, setSliderTime] = useState(currentTime)
-  const sliderTimeRef = useRef(currentTime)
-  const hasPendingSeekRef = useRef(false)
-  const seekCommitTimerRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    if (!hasPendingSeekRef.current) {
-      sliderTimeRef.current = currentTime
-      setSliderTime(currentTime)
-    }
-  }, [currentTime])
-
-  useEffect(
-    () => () => {
-      if (seekCommitTimerRef.current !== null) {
-        window.clearTimeout(seekCommitTimerRef.current)
-      }
-    },
-    []
-  )
-
-  const commitSeek = () => {
-    if (seekCommitTimerRef.current !== null) {
-      window.clearTimeout(seekCommitTimerRef.current)
-      seekCommitTimerRef.current = null
-    }
-    if (!hasPendingSeekRef.current) return
-    hasPendingSeekRef.current = false
-    playbackControls.seek(sliderTimeRef.current)
-  }
 
   const updateSlider = (time: number) => {
-    sliderTimeRef.current = time
-    setSliderTime(time)
-    hasPendingSeekRef.current = true
-    if (seekCommitTimerRef.current !== null) {
-      window.clearTimeout(seekCommitTimerRef.current)
-    }
-    seekCommitTimerRef.current = window.setTimeout(commitSeek, 150)
+    const state = useScoreStore.getState()
+    tracePlayback('seek-bar', 'input', {
+      inputTime: time,
+      storeCurrentTimeBeforeSeek: state.currentTime,
+      totalDuration: state.totalDuration,
+      isPlaying: state.isPlaying,
+    })
+    playbackControls.seek(time)
+  }
+
+  const tracePointerEvent = (
+    event: React.PointerEvent<HTMLInputElement>,
+    eventName: 'pointer-down' | 'pointer-up' | 'pointer-cancel'
+  ) => {
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const ratio = Math.min(
+      1,
+      Math.max(0, (event.clientX - bounds.left) / bounds.width)
+    )
+    const state = useScoreStore.getState()
+
+    tracePlayback('seek-bar', eventName, {
+      domValue: Number(event.currentTarget.value),
+      expectedTimeFromPointer: ratio * state.totalDuration,
+      clientX: event.clientX,
+      rangeLeft: bounds.left,
+      rangeWidth: bounds.width,
+      pointerType: event.pointerType,
+      storeCurrentTime: state.currentTime,
+      totalDuration: state.totalDuration,
+      isPlaying: state.isPlaying,
+    })
   }
 
   return (
     <div className="flex h-7 items-center gap-2 text-[11px] text-slate-600 tabular-nums sm:text-xs">
-      <span className="w-9 shrink-0">{formatTime(sliderTime)}</span>
+      <span className="w-9 shrink-0">{formatTime(currentTime)}</span>
       <input
         type="range"
         min={0}
         max={totalDuration || 1}
         step={0.1}
-        value={sliderTime}
+        value={currentTime}
         disabled={totalDuration === 0}
         className="player-range min-w-0 flex-1 disabled:opacity-40"
         aria-label="再生位置"
-        onChange={(event) => updateSlider(Number(event.target.value))}
-        onKeyUp={commitSeek}
-        onPointerUp={commitSeek}
-        onBlur={commitSeek}
+        onInput={(event) => updateSlider(Number(event.currentTarget.value))}
+        onChange={(event) =>
+          tracePlayback('seek-bar', 'change', {
+            domValue: Number(event.currentTarget.value),
+            storeCurrentTime: useScoreStore.getState().currentTime,
+          })
+        }
+        onPointerDown={(event) => tracePointerEvent(event, 'pointer-down')}
+        onPointerUp={(event) => tracePointerEvent(event, 'pointer-up')}
+        onPointerCancel={(event) => tracePointerEvent(event, 'pointer-cancel')}
+        onTouchEnd={(event) =>
+          tracePlayback('seek-bar', 'touch-end', {
+            domValue: Number(event.currentTarget.value),
+            storeCurrentTime: useScoreStore.getState().currentTime,
+          })
+        }
       />
       <span className="w-9 shrink-0 text-right">
         {formatTime(totalDuration)}
