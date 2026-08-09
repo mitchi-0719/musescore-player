@@ -140,7 +140,9 @@ export const ScorePreview = () => {
       const measures = osmdRef.current?.GraphicSheet?.MeasureList[measureIndex]
       if (!measures) return null
 
-      const visibleMeasure = measures.find((measure) => measure.isVisible())
+      // OSMDのMeasureListは型上GraphicalMeasure[]だが、実行時には
+      // 非表示譜表の位置がundefinedになった疎配列を返すことがある。
+      const visibleMeasure = measures.find((measure) => measure?.isVisible())
       if (!visibleMeasure) return null
 
       return (
