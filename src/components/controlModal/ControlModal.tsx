@@ -192,37 +192,8 @@ const DrawerHeader: FC<HeaderProps> = ({
     setTempoPercentage(Math.min(200, tempoPercentage + 5))
 
   return (
-    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 py-1">
-      <CompactStepper
-        label="楽譜サイズ"
-        value={`${zoomPercentage}%`}
-        decrease={zoomOut}
-        increase={zoomIn}
-        isLoading={isZoomRendering}
-        decreaseLabel="楽譜を縮小"
-        increaseLabel="楽譜を拡大"
-      />
-
-      <button
-        type="button"
-        onClick={() => (isPlaying ? stop() : play())}
-        className="grid size-10 place-items-center rounded-full bg-blue-600 text-white shadow-[0_5px_15px_rgba(37,99,235,0.28)] active:scale-95"
-        aria-label={isPlaying ? '一時停止' : '再生'}
-      >
-        <Icon name={isPlaying ? 'pause' : 'play'} />
-      </button>
-
-      <div className="flex items-center gap-1 justify-self-end">
-        <CompactStepper
-          label="テンポ"
-          value={`x${tempoPercentage / 100}`}
-          decrease={decreaseTempo}
-          increase={increaseTempo}
-          decreaseLabel="テンポを5%下げる"
-          increaseLabel="テンポを5%上げる"
-          decreaseDisabled={tempoPercentage <= 25}
-          increaseDisabled={tempoPercentage >= 200}
-        />
+    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1 py-1">
+      <div className="flex items-end gap-1 justify-self-start">
         <button
           type="button"
           onClick={
@@ -243,6 +214,37 @@ const DrawerHeader: FC<HeaderProps> = ({
         >
           <Icon name="music-note" size="small" />
         </button>
+        <CompactStepper
+          label="テンポ"
+          value={`x${tempoPercentage / 100}`}
+          decrease={decreaseTempo}
+          increase={increaseTempo}
+          decreaseLabel="テンポを5%下げる"
+          increaseLabel="テンポを5%上げる"
+          decreaseDisabled={tempoPercentage <= 25}
+          increaseDisabled={tempoPercentage >= 200}
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={() => (isPlaying ? stop() : play())}
+        className="grid size-10 place-items-center rounded-full bg-blue-600 text-white shadow-[0_5px_15px_rgba(37,99,235,0.28)] active:scale-95"
+        aria-label={isPlaying ? '一時停止' : '再生'}
+      >
+        <Icon name={isPlaying ? 'pause' : 'play'} />
+      </button>
+
+      <div className="flex items-end gap-1 justify-self-end">
+        <CompactStepper
+          label="楽譜サイズ"
+          value={`${zoomPercentage}%`}
+          decrease={zoomOut}
+          increase={zoomIn}
+          isLoading={isZoomRendering}
+          decreaseLabel="楽譜を縮小"
+          increaseLabel="楽譜を拡大"
+        />
         <button
           type="button"
           onClick={toggleOpen}

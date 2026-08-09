@@ -43,7 +43,7 @@ export const MixerPanel: FC<MixerPanelProps> = ({
         </span>
         <button
           type="button"
-          className="grid h-7 w-full place-items-center rounded-md border border-blue-200 bg-blue-50 text-blue-600 disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-300"
+          className="grid h-5 place-items-center rounded-md border border-blue-200 bg-blue-50 px-3 text-blue-600 disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-300"
           disabled={
             isPlaying || visibilityControls.isRendering || allPartsVisible
           }
@@ -51,7 +51,7 @@ export const MixerPanel: FC<MixerPanelProps> = ({
           title="全パートを表示"
           onClick={visibilityControls.showAllParts}
         >
-          <Icon name="visibility" size="small" />
+          <Icon name="visibility" size="xSmall" />
         </button>
         <input
           type="range"
@@ -87,7 +87,7 @@ export const MixerPanel: FC<MixerPanelProps> = ({
         <span className="w-full truncate text-center text-xs text-gray-700">
           Metronome
         </span>
-        <span className="h-7" aria-hidden="true" />
+        <span className="h-5" aria-hidden="true" />
         <input
           type="range"
           min={0}
@@ -151,7 +151,7 @@ export const MixerPanel: FC<MixerPanelProps> = ({
             </span>
             <button
               type="button"
-              className={`grid h-7 w-full place-items-center rounded-md border ${
+              className={`grid h-5 place-items-center rounded-md border px-3 ${
                 scorePart.isVisible
                   ? 'border-blue-200 bg-blue-50 text-blue-600'
                   : 'border-slate-200 bg-slate-50 text-slate-400'
@@ -172,7 +172,7 @@ export const MixerPanel: FC<MixerPanelProps> = ({
             >
               <Icon
                 name={scorePart.isVisible ? 'visibility' : 'visibility-off'}
-                size="small"
+                size="xSmall"
               />
             </button>
             <input

@@ -31,9 +31,10 @@ const iconMap = {
 } as const
 
 export type IconName = keyof typeof iconMap
-export type IconSize = 'small' | 'medium' | 'large'
+export type IconSize = 'xSmall' | 'small' | 'medium' | 'large'
 
 const iconSizeClass: Record<IconSize, string> = {
+  xSmall: 'h-4 w-4',
   small: 'h-5 w-5',
   medium: 'h-6 w-6',
   large: 'h-7 w-7',
