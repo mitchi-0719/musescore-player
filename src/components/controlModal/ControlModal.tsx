@@ -7,7 +7,7 @@ import type {
 import { useOnOffState } from '../../hooks/useOnOffState'
 import { useScoreStore } from '../../stores/useScoreStore'
 import { Icon } from '../ui/Icon'
-import { MixerPanel } from './MixerPanel'
+import { MixerPanel, type ScoreVisibilityControls } from './MixerPanel'
 
 type ControlModalProps = {
   play: () => void
@@ -18,6 +18,8 @@ type ControlModalProps = {
   zoomOut: () => void
   zoomPercentage: number
   isZoomRendering: boolean
+  visibilityControls: ScoreVisibilityControls
+  onHeightChange: (height: number) => void
 }
 
 export const ControlModal: FC<ControlModalProps> = ({
@@ -29,11 +31,30 @@ export const ControlModal: FC<ControlModalProps> = ({
   zoomOut,
   zoomPercentage,
   isZoomRendering,
+  visibilityControls,
+  onHeightChange,
 }) => {
   const { state: isOpen, toggle: toggleDrawer } = useOnOffState(false)
+  const modalRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    const modal = modalRef.current
+    if (!modal) return
+
+    const reportHeight = () => {
+      onHeightChange(Math.ceil(modal.getBoundingClientRect().height))
+    }
+    const resizeObserver = new ResizeObserver(reportHeight)
+
+    reportHeight()
+    resizeObserver.observe(modal)
+
+    return () => resizeObserver.disconnect()
+  }, [onHeightChange])
 
   return (
     <aside
+      ref={modalRef}
       className="fixed right-0 bottom-0 left-0 z-50 rounded-t-2xl border border-slate-200 bg-white shadow-[0_-8px_30px_rgba(15,23,42,0.12)]"
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
@@ -65,12 +86,15 @@ export const ControlModal: FC<ControlModalProps> = ({
       >
         <div className="min-h-0 overflow-hidden">
           <div className="border-b border-slate-200 px-5">
-            <span className="inline-block border-b-2 border-blue-600 px-3 py-2 text-sm font-bold text-blue-600">
+            <span className="inline-block border-b-2 border-blue-600 px-3 py-0.5 text-xs font-bold text-blue-600">
               ミキサー
             </span>
           </div>
-          <div className="max-h-58 overflow-auto px-4 py-3 pb-[max(14px,env(safe-area-inset-bottom))]">
-            <MixerPanel mixerControls={mixerControls} />
+          <div className="overflow-x-auto overflow-y-hidden px-4 py-3 pb-[max(14px,env(safe-area-inset-bottom))]">
+            <MixerPanel
+              mixerControls={mixerControls}
+              visibilityControls={visibilityControls}
+            />
           </div>
         </div>
       </div>
@@ -187,37 +211,8 @@ const DrawerHeader: FC<HeaderProps> = ({
     setTempoPercentage(Math.min(200, tempoPercentage + 5))
 
   return (
-    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 py-1">
-      <CompactStepper
-        label="楽譜サイズ"
-        value={`${zoomPercentage}%`}
-        decrease={zoomOut}
-        increase={zoomIn}
-        isLoading={isZoomRendering}
-        decreaseLabel="楽譜を縮小"
-        increaseLabel="楽譜を拡大"
-      />
-
-      <button
-        type="button"
-        onClick={() => (isPlaying ? stop() : play())}
-        className="grid size-10 place-items-center rounded-full bg-blue-600 text-white shadow-[0_5px_15px_rgba(37,99,235,0.28)] active:scale-95"
-        aria-label={isPlaying ? '一時停止' : '再生'}
-      >
-        <Icon name={isPlaying ? 'pause' : 'play'} />
-      </button>
-
-      <div className="flex items-center gap-1 justify-self-end">
-        <CompactStepper
-          label="テンポ"
-          value={`x${tempoPercentage / 100}`}
-          decrease={decreaseTempo}
-          increase={increaseTempo}
-          decreaseLabel="テンポを5%下げる"
-          increaseLabel="テンポを5%上げる"
-          decreaseDisabled={tempoPercentage <= 25}
-          increaseDisabled={tempoPercentage >= 200}
-        />
+    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1 py-1">
+      <div className="flex items-end gap-1 justify-self-start">
         <button
           type="button"
           onClick={
@@ -238,6 +233,37 @@ const DrawerHeader: FC<HeaderProps> = ({
         >
           <Icon name="music-note" size="small" />
         </button>
+        <CompactStepper
+          label="テンポ"
+          value={`x${tempoPercentage / 100}`}
+          decrease={decreaseTempo}
+          increase={increaseTempo}
+          decreaseLabel="テンポを5%下げる"
+          increaseLabel="テンポを5%上げる"
+          decreaseDisabled={tempoPercentage <= 25}
+          increaseDisabled={tempoPercentage >= 200}
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={() => (isPlaying ? stop() : play())}
+        className="grid size-10 place-items-center rounded-full bg-blue-600 text-white shadow-[0_5px_15px_rgba(37,99,235,0.28)] active:scale-95"
+        aria-label={isPlaying ? '一時停止' : '再生'}
+      >
+        <Icon name={isPlaying ? 'pause' : 'play'} />
+      </button>
+
+      <div className="flex items-end gap-1 justify-self-end">
+        <CompactStepper
+          label="楽譜サイズ"
+          value={`${zoomPercentage}%`}
+          decrease={zoomOut}
+          increase={zoomIn}
+          isLoading={isZoomRendering}
+          decreaseLabel="楽譜を縮小"
+          increaseLabel="楽譜を拡大"
+        />
         <button
           type="button"
           onClick={toggleOpen}
