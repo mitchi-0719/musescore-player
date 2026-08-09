@@ -204,37 +204,49 @@ export const ScorePreview = () => {
       setIsPartVisibilityRendering(true)
       setVisibilityErrorState({ musicXml, message: null })
 
+      // ローディング表示を先にブラウザへ描画してから、重いOSMD更新を行う。
+      // 楽譜サイズ変更と同様に2フレーム待つことで、クリック直後に
+      // フィードバックが見えないままメインスレッドが塞がるのを防ぐ。
       requestAnimationFrame(() => {
-        try {
-          osmd.Sheet.Instruments.forEach((instrument) => {
-            instrument.Visible = !nextHiddenPartIds.has(instrument.IdString)
-          })
-          osmd.updateGraphic()
-          osmd.render()
-          setPartVisibilityState({ musicXml, hiddenPartIds: nextHiddenPartIds })
-          requestAnimationFrame(() => restoreMeasureAnchor(anchor))
-        } catch (error) {
-          logger.error('[ScorePreview] Part visibility render failed:', error)
-          osmd.Sheet.Instruments.forEach((instrument) => {
-            instrument.Visible = !previousHiddenPartIds.has(instrument.IdString)
-          })
+        requestAnimationFrame(() => {
           try {
+            osmd.Sheet.Instruments.forEach((instrument) => {
+              instrument.Visible = !nextHiddenPartIds.has(instrument.IdString)
+            })
             osmd.updateGraphic()
             osmd.render()
-            requestAnimationFrame(() => restoreMeasureAnchor(anchor))
-          } catch (rollbackError) {
-            logger.error(
-              '[ScorePreview] Part visibility rollback failed:',
-              rollbackError
-            )
+            setPartVisibilityState({
+              musicXml,
+              hiddenPartIds: nextHiddenPartIds,
+            })
+          } catch (error) {
+            logger.error('[ScorePreview] Part visibility render failed:', error)
+            osmd.Sheet.Instruments.forEach((instrument) => {
+              instrument.Visible = !previousHiddenPartIds.has(
+                instrument.IdString
+              )
+            })
+            try {
+              osmd.updateGraphic()
+              osmd.render()
+            } catch (rollbackError) {
+              logger.error(
+                '[ScorePreview] Part visibility rollback failed:',
+                rollbackError
+              )
+            }
+            setVisibilityErrorState({
+              musicXml,
+              message: 'パート表示を変更できませんでした',
+            })
           }
-          setVisibilityErrorState({
-            musicXml,
-            message: 'パート表示を変更できませんでした',
+
+          // 再描画結果とスクロール補正が反映されるフレームまで表示を保つ。
+          requestAnimationFrame(() => {
+            restoreMeasureAnchor(anchor)
+            setIsPartVisibilityRendering(false)
           })
-        } finally {
-          setIsPartVisibilityRendering(false)
-        }
+        })
       })
     },
     [
