@@ -1,4 +1,4 @@
-import { type FC, useEffect, useRef, useState } from 'react'
+import { type FC, useEffect, useRef } from 'react'
 
 import type {
   AudioMixerControls,
@@ -114,74 +114,24 @@ const PlaybackPositionControl: FC<{
 }> = ({ playbackControls }) => {
   const currentTime = useScoreStore((state) => state.currentTime)
   const totalDuration = useScoreStore((state) => state.totalDuration)
-  const [sliderTime, setSliderTime] = useState(currentTime)
-  const sliderTimeRef = useRef(currentTime)
-  const hasPendingSeekRef = useRef(false)
-  const seekCommitTimerRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    if (!hasPendingSeekRef.current) {
-      sliderTimeRef.current = currentTime
-      setSliderTime(currentTime)
-    }
-  }, [currentTime])
-
-  useEffect(
-    () => () => {
-      if (seekCommitTimerRef.current !== null) {
-        window.clearTimeout(seekCommitTimerRef.current)
-      }
-    },
-    []
-  )
-
-  const commitSeek = (time?: number) => {
-    if (seekCommitTimerRef.current !== null) {
-      window.clearTimeout(seekCommitTimerRef.current)
-      seekCommitTimerRef.current = null
-    }
-
-    // iOS Safari ではドラッグ中に change が発火せず、終了イベントだけが
-    // 最新値を持つ場合がある。明示的な値は pending 状態にかかわらず確定する。
-    if (time === undefined && !hasPendingSeekRef.current) return
-
-    const finalTime = time ?? sliderTimeRef.current
-    sliderTimeRef.current = finalTime
-    setSliderTime(finalTime)
-    hasPendingSeekRef.current = false
-    playbackControls.seek(finalTime)
-  }
 
   const updateSlider = (time: number) => {
-    sliderTimeRef.current = time
-    setSliderTime(time)
-    hasPendingSeekRef.current = true
-    if (seekCommitTimerRef.current !== null) {
-      window.clearTimeout(seekCommitTimerRef.current)
-    }
-    seekCommitTimerRef.current = window.setTimeout(() => commitSeek(), 150)
+    playbackControls.seek(time)
   }
 
   return (
     <div className="flex h-7 items-center gap-2 text-[11px] text-slate-600 tabular-nums sm:text-xs">
-      <span className="w-9 shrink-0">{formatTime(sliderTime)}</span>
+      <span className="w-9 shrink-0">{formatTime(currentTime)}</span>
       <input
         type="range"
         min={0}
         max={totalDuration || 1}
         step={0.1}
-        value={sliderTime}
+        value={currentTime}
         disabled={totalDuration === 0}
         className="player-range min-w-0 flex-1 disabled:opacity-40"
         aria-label="再生位置"
-        onChange={(event) => updateSlider(Number(event.target.value))}
-        onKeyUp={(event) => commitSeek(Number(event.currentTarget.value))}
-        onPointerUp={(event) => commitSeek(Number(event.currentTarget.value))}
-        onPointerCancel={(event) =>
-          commitSeek(Number(event.currentTarget.value))
-        }
-        onTouchEnd={(event) => commitSeek(Number(event.currentTarget.value))}
-        onBlur={(event) => commitSeek(Number(event.currentTarget.value))}
+        onInput={(event) => updateSlider(Number(event.currentTarget.value))}
       />
       <span className="w-9 shrink-0 text-right">
         {formatTime(totalDuration)}
