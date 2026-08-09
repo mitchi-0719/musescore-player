@@ -1000,7 +1000,14 @@ export const useAudioPlayer = (
       transportState: Tone.getTransport().state,
     })
     if (isPlaying) {
-      const startTicks = Math.max(0, playbackPositionTicksRef.current)
+      // Tone.js の tick 記法（`123i`）には整数だけを渡す。
+      // 小数tickを文字列化すると、一部のモバイルブラウザで桁違いの
+      // Transport位置として解釈されることがある。
+      const startTicks = Math.max(
+        0,
+        Math.round(playbackPositionTicksRef.current)
+      )
+      playbackPositionTicksRef.current = startTicks
       const transport = Tone.getTransport()
       const activeTempo = (options.tempoChanges ?? []).reduce(
         (bpm, change) => (change.time <= startTicks ? change.bpm : bpm),
@@ -1128,9 +1135,11 @@ export const useAudioPlayer = (
         scoreTimeline.totalDuration,
         Math.max(0, time)
       )
-      const ticks = Math.min(
-        scoreTimeline.totalTicks,
-        scoreSecondsToTicks(clampedTime, scoreTimeline.tempoChanges)
+      const ticks = Math.round(
+        Math.min(
+          scoreTimeline.totalTicks,
+          scoreSecondsToTicks(clampedTime, scoreTimeline.tempoChanges)
+        )
       )
       const transportBeforeSeek = _toneModule?.getTransport()
       tracePlayback('audio-player', 'seek-calculated', {
