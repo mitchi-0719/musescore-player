@@ -102,6 +102,7 @@ export const ScorePreview = () => {
   const zoomRenderFrameRef = useRef<number | null>(null)
   const [scoreZoomPercentage, setScoreZoomPercentage] = useState(100)
   const [isZoomRendering, setIsZoomRendering] = useState(false)
+  const [controlModalHeight, setControlModalHeight] = useState(0)
   const [isPartVisibilityRendering, setIsPartVisibilityRendering] =
     useState(false)
   const [partVisibilityState, setPartVisibilityState] = useState<{
@@ -579,6 +580,10 @@ export const ScorePreview = () => {
               </div>
             </div>
           )}
+          <div
+            aria-hidden="true"
+            style={{ height: `${controlModalHeight}px` }}
+          />
           <ControlModal
             play={play}
             stop={stop}
@@ -589,6 +594,7 @@ export const ScorePreview = () => {
             zoomPercentage={scoreZoomPercentage}
             isZoomRendering={isZoomRendering}
             visibilityControls={visibilityControls}
+            onHeightChange={setControlModalHeight}
           />
         </div>
       )}

@@ -19,6 +19,7 @@ type ControlModalProps = {
   zoomPercentage: number
   isZoomRendering: boolean
   visibilityControls: ScoreVisibilityControls
+  onHeightChange: (height: number) => void
 }
 
 export const ControlModal: FC<ControlModalProps> = ({
@@ -31,11 +32,29 @@ export const ControlModal: FC<ControlModalProps> = ({
   zoomPercentage,
   isZoomRendering,
   visibilityControls,
+  onHeightChange,
 }) => {
   const { state: isOpen, toggle: toggleDrawer } = useOnOffState(false)
+  const modalRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    const modal = modalRef.current
+    if (!modal) return
+
+    const reportHeight = () => {
+      onHeightChange(Math.ceil(modal.getBoundingClientRect().height))
+    }
+    const resizeObserver = new ResizeObserver(reportHeight)
+
+    reportHeight()
+    resizeObserver.observe(modal)
+
+    return () => resizeObserver.disconnect()
+  }, [onHeightChange])
 
   return (
     <aside
+      ref={modalRef}
       className="fixed right-0 bottom-0 left-0 z-50 rounded-t-2xl border border-slate-200 bg-white shadow-[0_-8px_30px_rgba(15,23,42,0.12)]"
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
@@ -67,7 +86,7 @@ export const ControlModal: FC<ControlModalProps> = ({
       >
         <div className="min-h-0 overflow-hidden">
           <div className="border-b border-slate-200 px-5">
-            <span className="inline-block border-b-2 border-blue-600 px-3 py-2 text-sm font-bold text-blue-600">
+            <span className="inline-block border-b-2 border-blue-600 px-3 py-0.5 text-xs font-bold text-blue-600">
               ミキサー
             </span>
           </div>
