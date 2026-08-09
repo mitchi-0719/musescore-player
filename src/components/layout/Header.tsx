@@ -11,12 +11,9 @@ type HeaderProps = {
 export const Header = ({ hasScore }: HeaderProps) => {
   const [isAboutOpen, setIsAboutOpen] = useState(false)
   const fileName = useScoreStore((state) => state.fileName)
-  const player = useScoreStore((state) => state.player)
   const reset = useScoreStore((state) => state.reset)
 
   const returnHome = () => {
-    player?.pause()
-    player?.dispose()
     reset()
   }
 
