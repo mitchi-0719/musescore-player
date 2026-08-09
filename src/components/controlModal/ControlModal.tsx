@@ -135,16 +135,21 @@ const PlaybackPositionControl: FC<{
     []
   )
 
-  const commitSeek = (time = sliderTimeRef.current) => {
+  const commitSeek = (time?: number) => {
     if (seekCommitTimerRef.current !== null) {
       window.clearTimeout(seekCommitTimerRef.current)
       seekCommitTimerRef.current = null
     }
-    if (!hasPendingSeekRef.current) return
-    sliderTimeRef.current = time
-    setSliderTime(time)
+
+    // iOS Safari ではドラッグ中に change が発火せず、終了イベントだけが
+    // 最新値を持つ場合がある。明示的な値は pending 状態にかかわらず確定する。
+    if (time === undefined && !hasPendingSeekRef.current) return
+
+    const finalTime = time ?? sliderTimeRef.current
+    sliderTimeRef.current = finalTime
+    setSliderTime(finalTime)
     hasPendingSeekRef.current = false
-    playbackControls.seek(time)
+    playbackControls.seek(finalTime)
   }
 
   const updateSlider = (time: number) => {
