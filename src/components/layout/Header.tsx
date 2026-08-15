@@ -6,9 +6,10 @@ import { Icon } from '../ui/Icon'
 
 type HeaderProps = {
   hasScore: boolean
+  onOpenInstallGuide: () => void
 }
 
-export const Header = ({ hasScore }: HeaderProps) => {
+export const Header = ({ hasScore, onOpenInstallGuide }: HeaderProps) => {
   const [isAboutOpen, setIsAboutOpen] = useState(false)
   const fileName = useScoreStore((state) => state.fileName)
   const reset = useScoreStore((state) => state.reset)
@@ -117,10 +118,16 @@ export const Header = ({ hasScore }: HeaderProps) => {
                 音符のタップ、テンポ変更、パート別の音量調整に対応しています。
               </li>
             </ul>
-            <h4 className="mt-4 text-sm font-bold">追加のやり方</h4>
-            <p className="mt-2 text-sm">
-              ブラウザのメニューからホーム画面へ追加すると、アプリのようにすぐ起動できます。
-            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setIsAboutOpen(false)
+                onOpenInstallGuide()
+              }}
+              className="mt-5 w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-bold text-blue-700 active:bg-blue-100"
+            >
+              ホーム画面への追加方法を見る
+            </button>
             <button
               type="button"
               onClick={() => setIsAboutOpen(false)}
