@@ -1,5 +1,5 @@
 ---
-DB Name: MuseScore Player
+DB Name: Refinear
 Issue: []
 Status: In progress
 documents: []
@@ -16,9 +16,9 @@ documents: []
 <table_of_contents color="gray"/>
 # 企画書
 ## URL集
-- **Github**: [https://github.com/mitchi-0719/musescore-player](https://github.com/mitchi-0719/musescore-player)
-- **デプロイ**: [https://vercel.com/mitchi0719s-projects/musescore-player](https://vercel.com/mitchi0719s-projects/musescore-player)
-- **公開URL**: [https://musescore-player.vercel.app/](https://musescore-player.vercel.app/)
+- **Github**: [https://github.com/mitchi-0719/refinear](https://github.com/mitchi-0719/refinear)
+- **デプロイ**: [https://vercel.com/mitchi0719s-projects/refinear](https://vercel.com/mitchi0719s-projects/refinear)
+- **公開URL**: [https://refinear.vercel.app/](https://refinear.vercel.app/)
 - **Notebook**: [https://gemini.google.com/notebook/e6f3fa88-503b-4e62-8660-801c1232bd4e](https://gemini.google.com/notebook/e6f3fa88-503b-4e62-8660-801c1232bd4e)
 ---
 ## 1. プロジェクト概要

@@ -30,7 +30,7 @@ const createServiceWorkerSource = (
   cacheVersion: string,
   coreUrls: string[],
   offlineUrls: string[]
-) => `const CACHE_NAME = ${JSON.stringify(`musescore-player-${cacheVersion}`)}
+) => `const CACHE_NAME = ${JSON.stringify(`refinear-${cacheVersion}`)}
 const CORE_URLS = ${JSON.stringify(coreUrls)}
 const OFFLINE_URLS = ${JSON.stringify(offlineUrls)}
 const ALL_URLS = [...new Set([...CORE_URLS, ...OFFLINE_URLS])]
@@ -51,7 +51,9 @@ self.addEventListener('activate', (event) => {
             keys
               .filter(
                 (key) =>
-                  key.startsWith('musescore-player-') && key !== CACHE_NAME
+                  (key.startsWith('refinear-') ||
+                    key.startsWith('musescore-player-')) &&
+                  key !== CACHE_NAME
               )
               .map((key) => caches.delete(key))
           )
@@ -265,8 +267,12 @@ export const webMscoreLocalAssets = (): Plugin => {
         '/index.html',
         '/manifest.json',
         '/favicon.ico',
+        '/favicon-16x16.png',
+        '/favicon-32x32.png',
         '/icon-192.png',
         '/icon-512.png',
+        '/icon-maskable-512.png',
+        '/apple-touch-icon.png',
         ...coreBundleUrls,
       ]
       const offlineUrls = [

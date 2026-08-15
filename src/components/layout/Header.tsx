@@ -6,9 +6,10 @@ import { Icon } from '../ui/Icon'
 
 type HeaderProps = {
   hasScore: boolean
+  onOpenInstallGuide: () => void
 }
 
-export const Header = ({ hasScore }: HeaderProps) => {
+export const Header = ({ hasScore, onOpenInstallGuide }: HeaderProps) => {
   const [isAboutOpen, setIsAboutOpen] = useState(false)
   const fileName = useScoreStore((state) => state.fileName)
   const reset = useScoreStore((state) => state.reset)
@@ -23,7 +24,7 @@ export const Header = ({ hasScore }: HeaderProps) => {
         className="sticky top-0 right-0 left-0 z-40 border-b border-slate-200 bg-white/95 text-[#071b47] shadow-[0_4px_16px_rgba(15,38,75,0.10)] backdrop-blur"
         data-app-header
       >
-        <div className="mx-auto flex h-18 w-full max-w-5xl items-center justify-between px-4 sm:h-20 sm:px-6">
+        <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between px-4 sm:h-20 sm:px-6">
           {hasScore ? (
             <button
               type="button"
@@ -34,15 +35,12 @@ export const Header = ({ hasScore }: HeaderProps) => {
               <Icon name="home" />
             </button>
           ) : (
-            <div className="flex min-w-0 items-center gap-3">
+            <div className="flex min-w-0 items-center">
               <img
-                src="/icon-192.png"
-                alt=""
-                className="size-10 rounded-xl sm:size-11"
+                src="/banner.png"
+                alt="Refinear"
+                className="h-8 w-auto max-w-40 object-contain sm:h-11 sm:max-w-48"
               />
-              <span className="truncate text-[17px] font-bold tracking-[-0.02em] sm:text-xl">
-                MuseScore Player
-              </span>
             </div>
           )}
 
@@ -96,7 +94,7 @@ export const Header = ({ hasScore }: HeaderProps) => {
                   ABOUT
                 </p>
                 <h2 id="about-title" className="mt-1 text-xl font-bold">
-                  MuseScore Playerについて
+                  Refinearについて
                 </h2>
               </div>
               <button
@@ -108,6 +106,11 @@ export const Header = ({ hasScore }: HeaderProps) => {
                 <Icon name="close" size="small" />
               </button>
             </div>
+            <p className="mt-5 text-sm leading-6 text-slate-600">
+              Refinearは、「洗練する」を意味する Refine と、「聴く」を意味する
+              Hear
+              を組み合わせた名前です。楽譜を見て、音を聴き、繰り返し確かめる。その積み重ねで、一つひとつの音や自分のパートを磨いていく音取りの過程を表現しています。
+            </p>
             <ul className="mt-5 space-y-1 text-sm leading-6 text-slate-600">
               <li>MSCZ楽譜をブラウザ内で表示・再生できます。</li>
               <li>ファイルは外部へ送信されず、端末内で処理されます。</li>
@@ -115,10 +118,16 @@ export const Header = ({ hasScore }: HeaderProps) => {
                 音符のタップ、テンポ変更、パート別の音量調整に対応しています。
               </li>
             </ul>
-            <h4 className="mt-4 text-sm font-bold">追加のやり方</h4>
-            <p className="mt-2 text-sm">
-              ブラウザのメニューからホーム画面へ追加すると、アプリのようにすぐ起動できます。
-            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setIsAboutOpen(false)
+                onOpenInstallGuide()
+              }}
+              className="mt-5 w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 font-bold text-blue-700 active:bg-blue-100"
+            >
+              ホーム画面への追加方法を見る
+            </button>
             <button
               type="button"
               onClick={() => setIsAboutOpen(false)}

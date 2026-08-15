@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { OpenSheetMusicDisplay } from 'opensheetmusicdisplay'
 
@@ -16,9 +16,14 @@ export const useOSMD = (
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [renderError, setRenderError] = useState<string | null>(null)
   const [isRendering, setIsRendering] = useState(false)
+  const [renderRevision, setRenderRevision] = useState(0)
   const osmdRef = useRef<OpenSheetMusicDisplay | null>(null)
   const isLoadedRef = useRef(false)
   const zoomRef = useRef(zoom)
+
+  const notifyRendered = useCallback(() => {
+    setRenderRevision((revision) => revision + 1)
+  }, [])
 
   useEffect(() => {
     zoomRef.current = zoom
@@ -43,6 +48,7 @@ export const useOSMD = (
           if (osmdRef.current && isLoadedRef.current) {
             try {
               osmdRef.current.render()
+              notifyRendered()
             } catch (err) {
               logger.error('[useOSMD] Manual resize render error:', err)
             }
@@ -58,7 +64,7 @@ export const useOSMD = (
         clearTimeout(resizeTimeoutId)
       }
     }
-  }, [])
+  }, [notifyRendered])
 
   useEffect(() => {
     const container = containerRef.current
@@ -148,6 +154,7 @@ export const useOSMD = (
 
         if (!isCancelled) {
           osmd.render()
+          notifyRendered()
           setIsRendering(false)
         }
       } catch (err) {
@@ -176,7 +183,14 @@ export const useOSMD = (
         container.innerHTML = ''
       }
     }
-  }, [musicXml, musicMxl])
+  }, [musicXml, musicMxl, notifyRendered])
 
-  return { containerRef, renderError, isRendering, osmdRef }
+  return {
+    containerRef,
+    renderError,
+    isRendering,
+    osmdRef,
+    renderRevision,
+    notifyRendered,
+  }
 }

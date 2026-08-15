@@ -1,6 +1,10 @@
-# MuseScore Player
+# Refinear（リファイナー）
 
-MuseScore の `.mscz` ファイルをブラウザ上で読み込み、**解析・楽譜表示・再生**までをフロントエンドのみで完結させる Web アプリです。
+Refinear は、MuseScore の `.mscz` ファイルをブラウザ上で読み込み、**解析・楽譜表示・再生**までをフロントエンドのみで完結させる音取りアプリです。
+
+名前は「洗練する」を意味する **Refine** と、「聴く」を意味する **Hear** を組み合わせた造語です。楽譜を見て、音を聴き、繰り返し確かめる。その積み重ねによって、一つひとつの音や自分のパートを磨いていく——そんな音取りの過程を表現しています。
+
+> 聴くたびに、音が磨かれていく。
 
 ## 概要
 
@@ -104,4 +108,22 @@ npm run format
 
 # Build済み成果物のプレビュー
 npm run preview
+```
+
+## Cloudflare Workers
+
+このアプリは Cloudflare Workers Static Assets へデプロイします。設定は `wrangler.jsonc` で管理します。
+
+- ビルドコマンド: `npm run build`
+- ビルド出力ディレクトリ: `dist`
+- Node.js バージョン: `22`
+
+`assets.not_found_handling` を `single-page-application` に設定しているため、`/lp` などの URL へ直接アクセスしても React Router のページが表示されます。
+
+```bash
+# Cloudflare と同じ配信方式でローカル確認
+npm run preview:cloudflare
+
+# 本番デプロイ
+npm run deploy:cloudflare
 ```

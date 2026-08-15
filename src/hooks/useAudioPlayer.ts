@@ -4,6 +4,7 @@ import type * as ToneModule from 'tone'
 
 import { DRUM_MAP, MIDI_UNPITCHED_TO_KEY } from '../constants/drum'
 import { PIANO_MAP } from '../constants/piano'
+import { configurePlaybackAudioSession } from '../lib/audioSession'
 import { logger } from '../lib/logger'
 import type { NoteEvent, SamplerId, TempoChange } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
@@ -14,10 +15,14 @@ type AudioPlayerOptions = {
   onPlaybackStart?: (startTicks: number) => void
   onPlaybackStop?: () => void
   onSeek?: (ticks: number) => void
+  resolveSeekTicks?: (ticks: number) => number
 }
 
 export type AudioPlaybackControls = {
-  seek: (time: number) => void
+  beginSeek: () => void
+  previewSeek: (time: number) => void
+  commitSeek: () => void
+  cancelSeek: () => void
 }
 
 export type AudioPartControl = {
@@ -340,6 +345,9 @@ export const useAudioPlayer = (
   const onPlaybackStartRef = useRef(options.onPlaybackStart)
   const onPlaybackStopRef = useRef(options.onPlaybackStop)
   const onSeekRef = useRef(options.onSeek)
+  const resolveSeekTicksRef = useRef(options.resolveSeekTicks)
+  const isSeekingRef = useRef(false)
+  const resumeAfterSeekRef = useRef(false)
   const hasObservedPlaybackStateRef = useRef(false)
   const activePartIdsRef = useRef<Set<string>>(new Set())
   const measureStartTicksRef = useRef<Set<number>>(new Set())
@@ -404,11 +412,13 @@ export const useAudioPlayer = (
     onPlaybackStartRef.current = options.onPlaybackStart
     onPlaybackStopRef.current = options.onPlaybackStop
     onSeekRef.current = options.onSeek
+    resolveSeekTicksRef.current = options.resolveSeekTicks
   }, [
     options.onNoteStart,
     options.onPlaybackStart,
     options.onPlaybackStop,
     options.onSeek,
+    options.resolveSeekTicks,
   ])
 
   useEffect(() => {
@@ -1007,6 +1017,7 @@ export const useAudioPlayer = (
   }, [isPlaying, options.tempoChanges, scoreTimeline.totalTicks, toneReady])
 
   const play = useCallback(async () => {
+    configurePlaybackAudioSession()
     const Tone = await getTone()
     await Tone.start()
 
@@ -1046,44 +1057,65 @@ export const useAudioPlayer = (
     setIsPlaying(false)
   }, [scoreTimeline, setCurrentTime, setHighlightedNote, setIsPlaying])
 
-  const seek = useCallback(
+  const beginSeek = useCallback(() => {
+    if (isSeekingRef.current) return
+
+    isSeekingRef.current = true
+    resumeAfterSeekRef.current = useScoreStore.getState().isPlaying
+    if (resumeAfterSeekRef.current) stop()
+  }, [stop])
+
+  const previewSeek = useCallback(
     (time: number) => {
+      beginSeek()
+
       const clampedTime = Math.min(
         scoreTimeline.totalDuration,
         Math.max(0, time)
       )
-      const ticks = Math.round(
+      const requestedTicks = Math.round(
         Math.min(
           scoreTimeline.totalTicks,
           scoreSecondsToTicks(clampedTime, scoreTimeline.tempoChanges)
         )
       )
+      const ticks = Math.min(
+        scoreTimeline.totalTicks,
+        Math.max(
+          0,
+          Math.round(
+            resolveSeekTicksRef.current?.(requestedTicks) ?? requestedTicks
+          )
+        )
+      )
       playbackPositionTicksRef.current = ticks
-      setCurrentTime(clampedTime)
+      setCurrentTime(ticksToScoreSeconds(ticks, scoreTimeline.tempoChanges))
       setHighlightedNote(ticks)
       onSeekRef.current?.(ticks)
-      if (_toneModule) {
-        const transport = _toneModule.getTransport()
-        // 停止中は次回の start offset だけで位置を適用する。
-        // 停止済みTransportのticksをここで変更すると、Tone.js内部の
-        // タイムラインと開始offsetが競合して末尾へ移動することがある。
-        if (transport.state === 'started') {
-          transport.ticks = ticks
-        }
-        const activeTempo = scoreTimeline.tempoChanges.reduce(
-          (bpm, change) => (change.time <= ticks ? change.bpm : bpm),
-          scoreTimeline.tempoChanges[0]?.bpm ?? 120
-        )
-        transport.bpm.value = activeTempo * tempoMultiplierRef.current
-      }
     },
-    [scoreTimeline, setCurrentTime, setHighlightedNote]
+    [beginSeek, scoreTimeline, setCurrentTime, setHighlightedNote]
   )
 
+  const commitSeek = useCallback(() => {
+    if (!isSeekingRef.current) return
+
+    isSeekingRef.current = false
+    const shouldResume = resumeAfterSeekRef.current
+    resumeAfterSeekRef.current = false
+    if (shouldResume) void play()
+  }, [play])
+
+  const cancelSeek = useCallback(() => {
+    isSeekingRef.current = false
+    resumeAfterSeekRef.current = false
+  }, [])
+
   const playNote: PlayNoteFn = useCallback(
-    (samplerId, playbackKey, durationBeats) => {
-      const Tone = _toneModule
-      if (!Tone) return
+    async (samplerId, playbackKey, durationBeats) => {
+      configurePlaybackAudioSession()
+      const Tone = await getTone()
+      await Tone.start()
+
       const sampler = samplers.current[samplerId] ?? samplers.current.piano
       if (!sampler || !sampler.loaded) return
 
@@ -1308,9 +1340,10 @@ export const useAudioPlayer = (
     ]
   )
 
-  const playbackControls: AudioPlaybackControls = {
-    seek,
-  }
+  const playbackControls = useMemo<AudioPlaybackControls>(
+    () => ({ beginSeek, previewSeek, commitSeek, cancelSeek }),
+    [beginSeek, cancelSeek, commitSeek, previewSeek]
+  )
 
   return { play, stop, playNote, mixerControls, playbackControls }
 }
@@ -1319,15 +1352,17 @@ export type PlayNoteFn = (
   samplerId: string,
   playbackKey: string | number,
   durationBeats: number
-) => void
+) => Promise<void>
 
 // React 型を使わず構造的に表現
 export const createPlayNote = (samplersRef: {
   current: Record<string, ToneModule.Sampler> | undefined | null
 }): PlayNoteFn => {
-  return (samplerId, playbackKey, durationBeats) => {
-    const Tone = _toneModule
-    if (!Tone) return
+  return async (samplerId, playbackKey, durationBeats) => {
+    configurePlaybackAudioSession()
+    const Tone = await getTone()
+    await Tone.start()
+
     const sampler =
       samplersRef.current?.[samplerId] ?? samplersRef.current?.piano
     if (!sampler || !sampler.loaded) return
