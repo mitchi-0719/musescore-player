@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -b && vite build",
+    "deploy:cloudflare": "npm run build && wrangler deploy",
     "dev": "vite",
     "dev:production": "vite --mode production",
     "fetch_plan": "sh scripts/fetch_plan.sh",
@@ -13,7 +14,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "prepare": "husky",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "preview:cloudflare": "npm run build && wrangler dev"
   },
   "dependencies": {
     "jszip": "^3.10.1",
@@ -54,6 +56,7 @@
     "tailwindcss": "^4",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "wrangler": "^4.123.0"
   }
 }

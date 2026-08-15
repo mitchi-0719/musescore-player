@@ -109,3 +109,21 @@ npm run format
 # Build済み成果物のプレビュー
 npm run preview
 ```
+
+## Cloudflare Workers
+
+このアプリは Cloudflare Workers Static Assets へデプロイします。設定は `wrangler.jsonc` で管理します。
+
+- ビルドコマンド: `npm run build`
+- ビルド出力ディレクトリ: `dist`
+- Node.js バージョン: `22`
+
+`assets.not_found_handling` を `single-page-application` に設定しているため、`/lp` などの URL へ直接アクセスしても React Router のページが表示されます。
+
+```bash
+# Cloudflare と同じ配信方式でローカル確認
+npm run preview:cloudflare
+
+# 本番デプロイ
+npm run deploy:cloudflare
+```
