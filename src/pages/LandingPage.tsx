@@ -63,7 +63,7 @@ export const LandingPage = () => (
         className="text-[17px] font-extrabold tracking-[-0.03em] md:text-[28px]"
         to="/lp"
       >
-        MuseScore Player
+        Refinear
       </Link>
       <nav
         className="flex items-center gap-4.5 text-[11px] font-bold md:gap-11 md:text-sm"
@@ -82,7 +82,7 @@ export const LandingPage = () => (
       >
         <div>
           <p className="mb-5 text-sm text-[#8792a1] md:mb-7">
-            musescore-player&nbsp; / &nbsp;about
+            Refinear&nbsp; / &nbsp;about
           </p>
           <p className="text-sm font-extrabold tracking-[0.03em] text-[#1261ec]">
             MSCZ PLAYER FOR VOCAL PRACTICE
@@ -174,15 +174,14 @@ export const LandingPage = () => (
               実際のアプリ画面を開く → /
             </ActionLink>
           </div>
-          <div
-            className="relative mx-auto mt-6 grid size-20.5 place-items-center rounded-2xl bg-[#061b33] text-[40px] text-white md:mt-0 md:mr-[18%]"
-            aria-label="MuseScore Player アイコン"
-          >
-            m̊
+          <div className="relative mx-auto mt-6 size-20.5 md:mt-0 md:mr-[18%]">
+            <img
+              src="/icon-192.png"
+              alt="Refinear アイコン"
+              className="size-full rounded-2xl"
+            />
             <small className="absolute top-22 w-27.5 text-center text-xs text-black">
-              MuseScore
-              <br />
-              Player
+              Refinear
             </small>
           </div>
         </div>
@@ -192,8 +191,7 @@ export const LandingPage = () => (
           ))}
         </div>
         <p className="mt-6.5 border-l-4 border-[#1261ec] bg-[#edf5ff] px-4 py-3.25 leading-[1.7] font-bold text-[#17365d]">
-          追加するのは、この紹介ページではなく実際のアプリ画面です。追加後はホーム画面の「MuseScore
-          Player」から開けます。
+          追加するのは、この紹介ページではなく実際のアプリ画面です。追加後はホーム画面の「Refinear」から開けます。
         </p>
       </section>
 
@@ -223,7 +221,7 @@ export const LandingPage = () => (
         >
           アプリを開く → /
         </ActionLink>
-        <p className="my-1">musescore-player /</p>
+        <p className="my-1">refinear /</p>
         <small>対応形式 .mscz / インストール不要</small>
       </section>
     </main>

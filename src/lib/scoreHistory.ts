@@ -1,6 +1,7 @@
 export const SCORE_CACHE_VERSION = 1 as const
 export const SCORE_CONVERTER_VERSION = 'webmscore-1.2.1'
 
+// Keep the legacy name so existing users retain their locally stored scores.
 const DATABASE_NAME = 'musescore-player'
 const DATABASE_VERSION = 1
 const SCORE_STORE_NAME = 'scores'

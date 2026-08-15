@@ -34,15 +34,12 @@ export const Header = ({ hasScore }: HeaderProps) => {
               <Icon name="home" />
             </button>
           ) : (
-            <div className="flex min-w-0 items-center gap-3">
+            <div className="flex min-w-0 items-center">
               <img
-                src="/icon-192.png"
-                alt=""
-                className="size-10 rounded-xl sm:size-11"
+                src="/banner.png"
+                alt="Refinear"
+                className="h-8 w-auto max-w-40 object-contain sm:h-11 sm:max-w-48"
               />
-              <span className="truncate text-[17px] font-bold tracking-[-0.02em] sm:text-xl">
-                MuseScore Player
-              </span>
             </div>
           )}
 
@@ -96,7 +93,7 @@ export const Header = ({ hasScore }: HeaderProps) => {
                   ABOUT
                 </p>
                 <h2 id="about-title" className="mt-1 text-xl font-bold">
-                  MuseScore Playerについて
+                  Refinearについて
                 </h2>
               </div>
               <button
@@ -108,6 +105,11 @@ export const Header = ({ hasScore }: HeaderProps) => {
                 <Icon name="close" size="small" />
               </button>
             </div>
+            <p className="mt-5 text-sm leading-6 text-slate-600">
+              Refinearは、「洗練する」を意味する Refine と、「聴く」を意味する
+              Hear
+              を組み合わせた名前です。楽譜を見て、音を聴き、繰り返し確かめる。その積み重ねで、一つひとつの音や自分のパートを磨いていく音取りの過程を表現しています。
+            </p>
             <ul className="mt-5 space-y-1 text-sm leading-6 text-slate-600">
               <li>MSCZ楽譜をブラウザ内で表示・再生できます。</li>
               <li>ファイルは外部へ送信されず、端末内で処理されます。</li>
