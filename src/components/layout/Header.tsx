@@ -23,7 +23,7 @@ export const Header = ({ hasScore }: HeaderProps) => {
         className="sticky top-0 right-0 left-0 z-40 border-b border-slate-200 bg-white/95 text-[#071b47] shadow-[0_4px_16px_rgba(15,38,75,0.10)] backdrop-blur"
         data-app-header
       >
-        <div className="mx-auto flex h-18 w-full max-w-5xl items-center justify-between px-4 sm:h-20 sm:px-6">
+        <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between px-4 sm:h-20 sm:px-6">
           {hasScore ? (
             <button
               type="button"

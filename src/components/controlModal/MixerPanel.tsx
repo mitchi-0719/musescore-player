@@ -1,7 +1,8 @@
-import type { FC } from 'react'
+import { type FC, Fragment } from 'react'
 
 import type { AudioMixerControls } from '../../hooks/useAudioPlayer'
 import { useScoreStore } from '../../stores/useScoreStore'
+import { Divider } from '../ui/Divider'
 import { Icon } from '../ui/Icon'
 
 export type ScorePartVisibilityControl = {
@@ -36,7 +37,7 @@ export const MixerPanel: FC<MixerPanelProps> = ({
   )
 
   return (
-    <div className="flex min-w-180 gap-4 pb-1">
+    <div className="flex min-w-180 gap-2 pb-1">
       <div className="flex w-20 shrink-0 flex-col items-center gap-2">
         <span className="w-full truncate text-center text-xs text-gray-700">
           Master
@@ -82,6 +83,8 @@ export const MixerPanel: FC<MixerPanelProps> = ({
           </button>
         </div>
       </div>
+
+      <Divider orientation="vertical" size="thin" />
 
       <div className="flex w-20 shrink-0 flex-col items-center gap-2">
         <span className="w-full truncate text-center text-xs text-gray-700">
@@ -142,90 +145,90 @@ export const MixerPanel: FC<MixerPanelProps> = ({
           (scorePart.isVisible && visiblePartCount === 1)
 
         return (
-          <div
-            key={scorePart.id}
-            className="flex w-20 shrink-0 flex-col items-center gap-2"
-          >
-            <span className="w-full truncate text-center text-xs text-gray-700">
-              {scorePart.name}
-            </span>
-            <button
-              type="button"
-              className={`grid h-5 place-items-center rounded-md border px-3 ${
-                scorePart.isVisible
-                  ? 'border-blue-200 bg-blue-50 text-blue-600'
-                  : 'border-slate-200 bg-slate-50 text-slate-400'
-              } disabled:cursor-not-allowed disabled:opacity-40`}
-              disabled={visibilityDisabled}
-              aria-pressed={scorePart.isVisible}
-              aria-label={`${scorePart.name}パートを${
-                scorePart.isVisible ? '非表示' : '表示'
-              }`}
-              title={
-                scorePart.isVisible && visiblePartCount === 1
-                  ? '最低1パートは表示する必要があります'
-                  : `${scorePart.name}パートを${
-                      scorePart.isVisible ? '非表示' : '表示'
-                    }`
-              }
-              onClick={() => visibilityControls.togglePart(scorePart.id)}
-            >
-              <Icon
-                name={scorePart.isVisible ? 'visibility' : 'visibility-off'}
-                size="xSmall"
+          <Fragment key={scorePart.id}>
+            <Divider orientation="vertical" size="thin" />
+            <div className="flex w-20 shrink-0 flex-col items-center gap-2">
+              <span className="w-full truncate text-center text-xs text-gray-700">
+                {scorePart.name}
+              </span>
+              <button
+                type="button"
+                className={`grid h-5 place-items-center rounded-md border px-3 ${
+                  scorePart.isVisible
+                    ? 'border-blue-200 bg-blue-50 text-blue-600'
+                    : 'border-slate-200 bg-slate-50 text-slate-400'
+                } disabled:cursor-not-allowed disabled:opacity-40`}
+                disabled={visibilityDisabled}
+                aria-pressed={scorePart.isVisible}
+                aria-label={`${scorePart.name}パートを${
+                  scorePart.isVisible ? '非表示' : '表示'
+                }`}
+                title={
+                  scorePart.isVisible && visiblePartCount === 1
+                    ? '最低1パートは表示する必要があります'
+                    : `${scorePart.name}パートを${
+                        scorePart.isVisible ? '非表示' : '表示'
+                      }`
+                }
+                onClick={() => visibilityControls.togglePart(scorePart.id)}
+              >
+                <Icon
+                  name={scorePart.isVisible ? 'visibility' : 'visibility-off'}
+                  size="xSmall"
+                />
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={2}
+                step={0.01}
+                value={audioPart?.volume ?? 1}
+                disabled={!audioPart}
+                aria-label={`${scorePart.name} 音量`}
+                className="h-16 w-6 [direction:rtl] [writing-mode:vertical-lr] disabled:opacity-30"
+                onChange={(event) =>
+                  mixerControls.setPartVolume(
+                    scorePart.id,
+                    Number(event.target.value)
+                  )
+                }
               />
-            </button>
-            <input
-              type="range"
-              min={0}
-              max={2}
-              step={0.01}
-              value={audioPart?.volume ?? 1}
-              disabled={!audioPart}
-              aria-label={`${scorePart.name} 音量`}
-              className="h-16 w-6 [direction:rtl] [writing-mode:vertical-lr] disabled:opacity-30"
-              onChange={(event) =>
-                mixerControls.setPartVolume(
-                  scorePart.id,
-                  Number(event.target.value)
-                )
-              }
-            />
-            <div className="flex w-full gap-1">
-              <button
-                type="button"
-                disabled={!audioPart}
-                className={`h-7 flex-1 rounded-md border text-xs font-medium disabled:cursor-not-allowed disabled:opacity-30 ${
-                  audioPart?.isMuted
-                    ? 'border-red-500 bg-red-500 text-white'
-                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                }`}
-                onClick={() =>
-                  audioPart?.isMuted
-                    ? mixerControls.unmutePart(scorePart.id)
-                    : mixerControls.mutePart(scorePart.id)
-                }
-              >
-                M
-              </button>
-              <button
-                type="button"
-                disabled={!audioPart}
-                className={`h-7 flex-1 rounded-md border text-xs font-medium disabled:cursor-not-allowed disabled:opacity-30 ${
-                  audioPart?.isSoloed
-                    ? 'border-blue-600 bg-blue-600 text-white'
-                    : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                }`}
-                onClick={() =>
-                  audioPart?.isSoloed
-                    ? mixerControls.clearSoloPart()
-                    : mixerControls.soloPart(scorePart.id)
-                }
-              >
-                S
-              </button>
+              <div className="flex w-full gap-1">
+                <button
+                  type="button"
+                  disabled={!audioPart}
+                  className={`h-7 flex-1 rounded-md border text-xs font-medium disabled:cursor-not-allowed disabled:opacity-30 ${
+                    audioPart?.isMuted
+                      ? 'border-red-500 bg-red-500 text-white'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                  onClick={() =>
+                    audioPart?.isMuted
+                      ? mixerControls.unmutePart(scorePart.id)
+                      : mixerControls.mutePart(scorePart.id)
+                  }
+                >
+                  M
+                </button>
+                <button
+                  type="button"
+                  disabled={!audioPart}
+                  className={`h-7 flex-1 rounded-md border text-xs font-medium disabled:cursor-not-allowed disabled:opacity-30 ${
+                    audioPart?.isSoloed
+                      ? 'border-blue-600 bg-blue-600 text-white'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                  onClick={() =>
+                    audioPart?.isSoloed
+                      ? mixerControls.clearSoloPart()
+                      : mixerControls.soloPart(scorePart.id)
+                  }
+                >
+                  S
+                </button>
+              </div>
             </div>
-          </div>
+          </Fragment>
         )
       })}
     </div>
