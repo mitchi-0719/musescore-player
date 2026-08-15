@@ -109,15 +109,67 @@ const formatTime = (time: number) => {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
+const SEEK_KEYS = new Set([
+  'ArrowLeft',
+  'ArrowRight',
+  'ArrowUp',
+  'ArrowDown',
+  'Home',
+  'End',
+  'PageUp',
+  'PageDown',
+])
+
 const PlaybackPositionControl: FC<{
   playbackControls: AudioPlaybackControls
 }> = ({ playbackControls }) => {
   const currentTime = useScoreStore((state) => state.currentTime)
   const totalDuration = useScoreStore((state) => state.totalDuration)
+  const isSeekingRef = useRef(false)
+  const pendingTimeRef = useRef(currentTime)
+  const seekFrameRef = useRef<number | null>(null)
 
-  const updateSlider = (time: number) => {
-    playbackControls.seek(time)
+  const beginSeek = () => {
+    if (isSeekingRef.current) return
+    isSeekingRef.current = true
+    pendingTimeRef.current = currentTime
+    playbackControls.beginSeek()
   }
+
+  const flushSeekPreview = () => {
+    if (seekFrameRef.current !== null) {
+      cancelAnimationFrame(seekFrameRef.current)
+      seekFrameRef.current = null
+    }
+    playbackControls.previewSeek(pendingTimeRef.current)
+  }
+
+  const previewSeek = (time: number) => {
+    beginSeek()
+    pendingTimeRef.current = time
+    if (seekFrameRef.current !== null) return
+
+    seekFrameRef.current = requestAnimationFrame(() => {
+      seekFrameRef.current = null
+      playbackControls.previewSeek(pendingTimeRef.current)
+    })
+  }
+
+  const commitSeek = () => {
+    if (!isSeekingRef.current) return
+    flushSeekPreview()
+    isSeekingRef.current = false
+    playbackControls.commitSeek()
+  }
+
+  useEffect(() => {
+    return () => {
+      if (seekFrameRef.current !== null) {
+        cancelAnimationFrame(seekFrameRef.current)
+      }
+      playbackControls.cancelSeek()
+    }
+  }, [playbackControls])
 
   return (
     <div className="flex h-7 items-center gap-2 text-[11px] text-slate-600 tabular-nums sm:text-xs">
@@ -131,7 +183,21 @@ const PlaybackPositionControl: FC<{
         disabled={totalDuration === 0}
         className="player-range min-w-0 flex-1 disabled:opacity-40"
         aria-label="再生位置"
-        onInput={(event) => updateSlider(Number(event.currentTarget.value))}
+        onPointerDown={(event) => {
+          beginSeek()
+          event.currentTarget.setPointerCapture(event.pointerId)
+        }}
+        onInput={(event) => previewSeek(Number(event.currentTarget.value))}
+        onPointerUp={commitSeek}
+        onPointerCancel={commitSeek}
+        onLostPointerCapture={commitSeek}
+        onKeyDown={(event) => {
+          if (SEEK_KEYS.has(event.key)) beginSeek()
+        }}
+        onKeyUp={(event) => {
+          if (SEEK_KEYS.has(event.key)) commitSeek()
+        }}
+        onBlur={commitSeek}
       />
       <span className="w-9 shrink-0 text-right">
         {formatTime(totalDuration)}
