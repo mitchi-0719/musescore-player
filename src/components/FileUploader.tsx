@@ -357,7 +357,7 @@ export const FileUploader = () => {
         <>
           <div className="mb-7">
             <h1 className="text-[28px] leading-tight font-extrabold tracking-[-0.035em] text-[#071b47] sm:text-3xl">
-              楽譜を開いて、練習しよう。
+              楽譜を開いて、練習しよう
             </h1>
             <p className="mt-3 text-[15px] leading-6 text-slate-500">
               MuseScoreファイルを端末内で表示・再生できます

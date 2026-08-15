@@ -1,7 +1,7 @@
 {
-  "name": "MuseScore Player",
-  "short_name": "MS Player",
-  "description": "MuseScore の .mscz ファイルをブラウザ上で解析・楽譜表示・再生する Web アプリです。",
+  "name": "Refinear",
+  "short_name": "Refinear",
+  "description": "MuseScoreの楽譜をどの端末でも開き、再生や音符のタップですぐに音を確かめられる、音取り専用アプリです。",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -18,6 +18,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

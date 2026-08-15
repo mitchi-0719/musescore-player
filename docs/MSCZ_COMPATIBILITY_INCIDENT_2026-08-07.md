@@ -164,13 +164,13 @@ MSCX先頭の `museScore version="4.40"` を `4.0` に変更して再試行し�
 
 クライアント変換が空譜または失敗になったときだけ、正式なMuseScore CLIを備えた変換サービスへ送る。再現性と対応範囲の面で最も堅牢だが、サーバー運用、ファイル転送、タイムアウト、隔離実行、一時ファイル削除が必要になる。
 
-- GitHub Issue: [#101](https://github.com/mitchi-0719/musescore-player/issues/101)
+- GitHub Issue: [#101](https://github.com/mitchi-0719/refinear/issues/101)
 
 ### クライアント内MSCX互換補正
 
 MSCZ内のMSCXを解析し、安全に特定できる既知の非互換パターンだけを正規化する。オフライン性を維持できる一方、原因要素の特定とバージョン別フィクスチャが必要になる。バージョン番号だけの書き換えは採用しない。
 
-- GitHub Issue: [#102](https://github.com/mitchi-0719/musescore-player/issues/102)
+- GitHub Issue: [#102](https://github.com/mitchi-0719/refinear/issues/102)
 
 ## 10. 今後の調査に必要なもの
 
