@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { Cursor } from 'opensheetmusicdisplay'
 import { useShallow } from 'zustand/shallow'
 
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
@@ -12,6 +11,11 @@ import {
   type TempoChange,
   parseMusicXmlForEvents,
 } from '../lib/musicXmlParser'
+import {
+  type PlaybackCursorAnchor,
+  buildPlaybackCursorIndex,
+  findNearestPlaybackCursorAnchor,
+} from '../lib/playbackCursorIndex'
 import { useScoreStore } from '../stores/useScoreStore'
 import { ControlModal } from './controlModal/ControlModal'
 import type {
@@ -20,9 +24,6 @@ import type {
 } from './controlModal/MixerPanel'
 import { Alert, AlertDescription, AlertTitle } from './ui/Alert'
 
-const TICKS_PER_QUARTER = 192
-const OSMD_TIMESTAMP_TO_TICKS = 4 * TICKS_PER_QUARTER
-const CURSOR_ADVANCE_LIMIT = 10000
 const MIN_CURSOR_WIDTH_PX = 4
 const SCORE_ZOOM_STEP_PERCENTAGE = 15
 const MIN_SCORE_ZOOM_PERCENTAGE = 25
@@ -63,16 +64,6 @@ const parseScoreParts = (musicXml: string | null) => {
   )
 }
 
-const getCursorTicks = (cursor: Cursor): number | null => {
-  try {
-    return Math.round(
-      cursor.Iterator.CurrentSourceTimestamp.RealValue * OSMD_TIMESTAMP_TO_TICKS
-    )
-  } catch {
-    return null
-  }
-}
-
 const syncCursorImageSize = (cursorElement?: HTMLImageElement | null) => {
   if (!cursorElement) return
 
@@ -95,6 +86,7 @@ const syncCursorImageSize = (cursorElement?: HTMLImageElement | null) => {
 }
 
 export const ScorePreview = () => {
+  const playbackCursorIndexRef = useRef<PlaybackCursorAnchor[]>([])
   const lastCursorEventTimeRef = useRef<number | null>(null)
   const lastCursorTopRef = useRef<string | null>(null)
   const scoreZoomPercentageRef = useRef(100)
@@ -120,7 +112,14 @@ export const ScorePreview = () => {
     }))
   )
 
-  const { containerRef, renderError, isRendering, osmdRef } = useOSMD(
+  const {
+    containerRef,
+    renderError,
+    isRendering,
+    osmdRef,
+    renderRevision,
+    notifyRendered,
+  } = useOSMD(
     musicXml,
     musicMxl,
     (DEFAULT_SCORE_ZOOM * scoreZoomPercentage) / 100
@@ -217,6 +216,7 @@ export const ScorePreview = () => {
             })
             osmd.updateGraphic()
             osmd.render()
+            notifyRendered()
             setPartVisibilityState({
               musicXml,
               hiddenPartIds: nextHiddenPartIds,
@@ -231,6 +231,7 @@ export const ScorePreview = () => {
             try {
               osmd.updateGraphic()
               osmd.render()
+              notifyRendered()
             } catch (rollbackError) {
               logger.error(
                 '[ScorePreview] Part visibility rollback failed:',
@@ -256,6 +257,7 @@ export const ScorePreview = () => {
       hiddenPartIds,
       isPartVisibilityRendering,
       musicXml,
+      notifyRendered,
       osmdRef,
       restoreMeasureAnchor,
     ]
@@ -364,41 +366,58 @@ export const ScorePreview = () => {
       if (!cursor) return
 
       const targetTicks = Math.max(0, Math.round(eventTime))
-      if (lastCursorEventTimeRef.current === targetTicks) {
+      const anchor = findNearestPlaybackCursorAnchor(
+        playbackCursorIndexRef.current,
+        targetTicks
+      )
+      if (!anchor) {
+        if (targetTicks !== 0) return
+        cursor.reset()
+        cursor.show()
+        syncCursorImageSize(cursor.cursorElement)
+        followPlaybackCursor(cursor.cursorElement)
+        lastCursorEventTimeRef.current = 0
         return
       }
-
-      const initialCursorTicks = getCursorTicks(cursor)
-      if (
-        initialCursorTicks === null ||
-        initialCursorTicks > targetTicks ||
-        (lastCursorEventTimeRef.current !== null &&
-          lastCursorEventTimeRef.current > targetTicks)
-      ) {
-        cursor.reset()
-      }
+      if (lastCursorEventTimeRef.current === anchor.ticks) return
 
       cursor.show()
-
-      let cursorTicks = getCursorTicks(cursor)
-      let advanceCount = 0
-      while (
-        cursorTicks !== null &&
-        cursorTicks < targetTicks &&
-        !cursor.Iterator.EndReached &&
-        advanceCount < CURSOR_ADVANCE_LIMIT
-      ) {
-        cursor.next()
-        cursorTicks = getCursorTicks(cursor)
-        advanceCount += 1
-      }
-
+      cursor.updateWidthAndStyle(
+        anchor.measurePositionAndShape,
+        anchor.x,
+        anchor.y,
+        anchor.height
+      )
       syncCursorImageSize(cursor.cursorElement)
       followPlaybackCursor(cursor.cursorElement)
-      lastCursorEventTimeRef.current = targetTicks
+      lastCursorEventTimeRef.current = anchor.ticks
     },
     [followPlaybackCursor, osmdRef]
   )
+
+  const resolveSeekTicks = useCallback((ticks: number) => {
+    return (
+      findNearestPlaybackCursorAnchor(playbackCursorIndexRef.current, ticks)
+        ?.ticks ?? ticks
+    )
+  }, [])
+
+  useEffect(() => {
+    const osmd = osmdRef.current
+    if (!osmd) {
+      playbackCursorIndexRef.current = []
+      return
+    }
+
+    const currentCursorTicks = lastCursorEventTimeRef.current
+    playbackCursorIndexRef.current = buildPlaybackCursorIndex(osmd)
+    lastCursorEventTimeRef.current = null
+    lastCursorTopRef.current = null
+
+    if (currentCursorTicks !== null) {
+      syncPlaybackCursor(currentCursorTicks)
+    }
+  }, [musicXml, osmdRef, renderRevision, syncPlaybackCursor])
 
   const startPlaybackCursor = useCallback(
     (startTicks: number) => {
@@ -432,6 +451,7 @@ export const ScorePreview = () => {
         osmdRef.current?.cursor?.hide()
       },
       onSeek: syncPlaybackCursor,
+      resolveSeekTicks,
     })
 
   const { handlePointerDown, handlePointerUp } = useNoteInteraction(
@@ -473,13 +493,14 @@ export const ScorePreview = () => {
             osmd.zoom =
               (DEFAULT_SCORE_ZOOM * scoreZoomPercentageRef.current) / 100
             osmd.render()
+            notifyRendered()
           } finally {
             setIsZoomRendering(false)
           }
         })
       })
     },
-    [osmdRef]
+    [notifyRendered, osmdRef]
   )
 
   const zoomIn = useCallback(
