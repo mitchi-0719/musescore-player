@@ -4,53 +4,45 @@ import {
   ActionLink,
   FeatureItem,
   HowToStep,
-  ImagePlaceholder,
-  InstallGuide,
+  LandingScreenshot,
   MixerSection,
   SectionTitle,
 } from '../components/lp/LandingPageComponents'
+import { Icon } from '../components/ui/Icon'
 
 const features = [
   {
     number: '01',
     title: '.msczをそのまま表示',
     text: 'MuseScoreファイルを読み込み、そのまま高精細な楽譜で表示します。',
+    imageSrc: '/LP/App.PNG',
+    imagePosition: 'center 32%',
   },
   {
     number: '02',
     title: '音符をタップして発音',
     text: '気になる音符をタップすると、その音だけをすぐに再生します。',
+    imageSrc: '/LP/Select.PNG',
+    imagePosition: 'center 47%',
   },
   {
     number: '03',
     title: '再生位置を自動で追従',
     text: '再生中は青い縦ラインが移動し、今どこを再生しているかが一目でわかります。',
-  },
-]
-
-const installGuides = [
-  {
-    title: 'iPhone・iPad（Safari）',
-    steps: [
-      '上のボタンからアプリ画面を開く',
-      '画面下の共有ボタンをタップ',
-      '「ホーム画面に追加」を選ぶ',
-    ],
-  },
-  {
-    title: 'Android（Chrome）',
-    steps: [
-      '上のボタンからアプリ画面を開く',
-      '画面右上のメニューをタップ',
-      '「アプリをインストール」を選ぶ',
-    ],
+    imageSrc: '/LP/Cursor.PNG',
+    imagePosition: 'center 43%',
   },
 ]
 
 const howToSteps = [
-  ['ファイルを選ぶ', '端末内の.msczを選択'],
-  ['楽譜が開く', 'すぐに譜面が表示される'],
-  ['タップ・再生して練習', 'タップで音を確かめながら練習'],
+  ['ファイルを選ぶ', '端末内の.msczを選択', '/LP/Home.PNG', 'center 42%'],
+  ['楽譜が開く', 'すぐに譜面が表示される', '/LP/App.PNG', 'center 30%'],
+  [
+    'タップ・再生して練習',
+    'タップで音を確かめながら練習',
+    '/LP/Select.PNG',
+    'center 47%',
+  ],
 ] as const
 
 const containerClass =
@@ -110,9 +102,11 @@ export const LandingPage = () => (
             ファイルはサーバーに送信されません
           </p>
         </div>
-        <ImagePlaceholder
+        <LandingScreenshot
           className="min-h-80 shadow-[0_10px_30px_#18314b18] min-[421px]:min-h-97.5 md:min-h-163.75"
-          label="アプリ画面"
+          src="/LP/Home.PNG"
+          alt="Refinearで楽譜を選ぶトップ画面"
+          objectPosition="center top"
         />
       </section>
 
@@ -126,70 +120,38 @@ export const LandingPage = () => (
       <MixerSection />
 
       <section
-        className={`${containerClass} grid gap-6 border-b border-[#aab8c8] py-7 md:grid-cols-[1fr_1.5fr] md:gap-9.5 md:pt-9.5`}
+        className={`${containerClass} border-b border-[#70859c] pt-8 pb-5`}
         id="about"
       >
-        <article>
-          <SectionTitle>小さい画面でも、読みやすく。</SectionTitle>
-          <div className="flex flex-wrap items-center md:gap-6">
-            <span className="rounded-l-[7px] border border-[#173c70] px-5.5 py-3.75 text-[22px]">
-              −
-            </span>
-            <b className="border-y border-[#173c70] px-5.5 py-3.75 text-[22px]">
-              100%
-            </b>
-            <span className="rounded-r-[7px] border border-[#173c70] px-5.5 py-3.75 text-[22px]">
-              ＋
-            </span>
-            <p className="mt-3.5 w-full leading-[1.6] md:mt-0 md:ml-3.5 md:w-auto">
-              25%から250%まで
-              <br />
-              譜面サイズを調整。
-            </p>
-          </div>
-        </article>
-        <article className="border-t border-[#7890aa] pt-6 md:border-t-0 md:border-l md:pt-0 md:pl-9.5">
-          <SectionTitle>アップロードせず、ブラウザの中で完結。</SectionTitle>
-          <ImagePlaceholder
-            className="min-h-26.25"
-            label="ファイル処理の流れ"
-          />
-        </article>
-      </section>
-
-      <section
-        className={`${containerClass} border-b border-[#70859c] pt-8 pb-5`}
-      >
-        <div className="md:flex md:items-start md:justify-between">
-          <div>
-            <SectionTitle>
-              アプリ画面をホーム画面に追加して、すぐ練習。
-            </SectionTitle>
-            <p className="leading-6 text-[#374150]">
-              この紹介ページではなく、先に「アプリを開く」ボタンから実際のアプリ画面を開いてください。
-              <br />
-              その画面をホーム画面に追加すると、次からはアイコンをタップするだけで使えます。
-            </p>
-            <ActionLink className="mt-1 w-fit px-5" size="compact" to="/">
-              実際のアプリ画面を開く → /
-            </ActionLink>
-          </div>
-          <div className="relative mx-auto mt-6 size-20.5 md:mt-0 md:mr-[18%]">
-            <img
-              src="/icon-192.png"
-              alt="Refinear アイコン"
-              className="size-full rounded-2xl"
-            />
-            <small className="absolute top-22 w-27.5 text-center text-xs text-black">
-              Refinear
-            </small>
-          </div>
+        <div>
+          <SectionTitle>
+            アプリ画面をホーム画面に追加して、すぐ練習。
+          </SectionTitle>
+          <p className="leading-6 text-[#374150]">
+            この紹介ページではなく、先に「アプリを開く」ボタンから実際のアプリ画面を開いてください。
+            <br />
+            その画面をホーム画面に追加すると、次からはアイコンをタップするだけで使えます。
+          </p>
+          <ActionLink className="mt-1 w-fit px-5" size="compact" to="/">
+            実際のアプリ画面を開く → /
+          </ActionLink>
         </div>
-        <div className="mt-16 grid gap-8.5 md:mt-11 md:grid-cols-2 md:gap-13">
-          {installGuides.map((guide) => (
-            <InstallGuide key={guide.title} {...guide} />
-          ))}
-        </div>
+        <ol className="mt-16 grid gap-4 text-sm md:mt-11 md:max-w-2xl md:grid-cols-2 md:text-base">
+          <li className="flex items-center gap-3 rounded-lg border border-[#b7c1ce] px-4 py-4">
+            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[#0a3269] font-extrabold text-white">
+              1
+            </span>
+            共有ボタン
+            <Icon name="ios-share" size="small" />
+            をタップ
+          </li>
+          <li className="flex items-center gap-3 rounded-lg border border-[#b7c1ce] px-4 py-4">
+            <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[#0a3269] font-extrabold text-white">
+              2
+            </span>
+            「ホーム画面に追加」を選択
+          </li>
+        </ol>
         <p className="mt-6.5 border-l-4 border-[#1261ec] bg-[#edf5ff] px-4 py-3.25 leading-[1.7] font-bold text-[#17365d]">
           追加するのは、この紹介ページではなく実際のアプリ画面です。追加後はホーム画面の「Refinear」から開けます。
         </p>
@@ -198,12 +160,14 @@ export const LandingPage = () => (
       <section className={`${containerClass} pt-6 pb-4`}>
         <SectionTitle>使い方は3ステップ</SectionTitle>
         <div className="grid gap-6.5 md:grid-cols-3 md:gap-11">
-          {howToSteps.map(([title, text], index) => (
+          {howToSteps.map(([title, text, imageSrc, imagePosition], index) => (
             <HowToStep
               key={title}
               number={index + 1}
               title={title}
               text={text}
+              imageSrc={imageSrc}
+              imagePosition={imagePosition}
             />
           ))}
         </div>

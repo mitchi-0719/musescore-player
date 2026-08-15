@@ -20,25 +20,30 @@ export const SectionTitle = ({
   </h2>
 )
 
-export const ImagePlaceholder = ({
+export const LandingScreenshot = ({
+  alt,
   className,
-  label = '画像が入ります',
+  objectPosition = 'center',
+  src,
 }: {
+  alt: string
   className?: string
-  label?: string
+  objectPosition?: string
+  src: string
 }) => (
-  <div
+  <figure
     className={classNames(
-      'relative grid min-h-47.5 place-items-center overflow-hidden rounded-[7px] border-[1.5px] border-[#b7c1ce] bg-slate-50 text-[#738095]',
+      'relative min-h-47.5 overflow-hidden rounded-[7px] border-[1.5px] border-[#b7c1ce] bg-[#f4f7fc]',
       className
     )}
-    role="img"
-    aria-label={label}
   >
-    <i className="absolute h-px w-[140%] rotate-24 bg-[#d8dee7]" />
-    <i className="absolute h-px w-[140%] -rotate-24 bg-[#d8dee7]" />
-    <span className="z-1 bg-slate-50 px-3 py-1.75 text-[13px]">{label}</span>
-  </div>
+    <img
+      className="absolute inset-0 size-full object-cover"
+      src={src}
+      alt={alt}
+      style={{ objectPosition }}
+    />
+  </figure>
 )
 
 type ActionLinkProps = {
@@ -85,14 +90,27 @@ export const ActionLink = ({
 }
 
 type FeatureItemProps = {
+  imagePosition: string
+  imageSrc: string
   number: string
   title: string
   text: string
 }
 
-export const FeatureItem = ({ number, title, text }: FeatureItemProps) => (
+export const FeatureItem = ({
+  imagePosition,
+  imageSrc,
+  number,
+  title,
+  text,
+}: FeatureItemProps) => (
   <article className="grid items-center gap-4.5 border-b border-[#aab8c8] pt-4.5 pb-6 md:grid-cols-2 md:gap-15.5 md:pb-4.5">
-    <ImagePlaceholder className="min-h-46.25" label={`機能 ${number} の画像`} />
+    <LandingScreenshot
+      className="min-h-46.25"
+      src={imageSrc}
+      alt={`${title}の画面`}
+      objectPosition={imagePosition}
+    />
     <div>
       <h3 className="mb-4 text-lg font-extrabold md:text-[23px]">
         <b className="mr-2.5 text-[25px] md:text-[34px]">{number}</b>
@@ -169,39 +187,15 @@ export const MixerSection = () => (
   </section>
 )
 
-export const InstallGuide = ({
-  title,
-  steps,
-}: {
-  title: string
-  steps: string[]
-}) => (
-  <article>
-    <h3 className="mb-4 font-extrabold text-[#1261ec]">{title}</h3>
-    <div className="grid gap-4.5 min-[421px]:grid-cols-2">
-      <ol className="space-y-4.75">
-        {steps.map((step, index) => (
-          <li className="flex items-start leading-[1.55]" key={step}>
-            <span className="mr-2.25 grid size-6.5 shrink-0 place-items-center rounded-full bg-[#0a3269] font-extrabold text-white">
-              {index + 1}
-            </span>
-            {step}
-          </li>
-        ))}
-      </ol>
-      <ImagePlaceholder
-        className="min-h-65 min-[421px]:min-h-57.5 md:min-h-68.75"
-        label={`${title} 操作画面`}
-      />
-    </div>
-  </article>
-)
-
 export const HowToStep = ({
+  imagePosition,
+  imageSrc,
   number,
   text,
   title,
 }: {
+  imagePosition: string
+  imageSrc: string
   number: number
   text: string
   title: string
@@ -213,9 +207,11 @@ export const HowToStep = ({
       </span>
       {title}
     </h3>
-    <ImagePlaceholder
+    <LandingScreenshot
       className="min-h-45 md:min-h-32.5"
-      label={`ステップ ${number} の画像`}
+      src={imageSrc}
+      alt={`${title}の画面`}
+      objectPosition={imagePosition}
     />
     <p className="my-2 text-center text-[13px]">{text}</p>
   </article>
