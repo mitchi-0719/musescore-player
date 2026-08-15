@@ -258,7 +258,12 @@ const DrawerHeader: FC<HeaderProps> = ({
               : 'メトロノームをオフ'
           }
         >
-          <Icon name="music-note" size="small" />
+          <img
+            src="/metronome.svg"
+            alt=""
+            aria-hidden="true"
+            className="size-5"
+          />
         </button>
         <CompactStepper
           label="テンポ"
