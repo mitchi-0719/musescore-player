@@ -279,7 +279,7 @@ export const useNoteInteraction = (
       setHighlightedNote(selectedNoteTime)
 
       if (playNote) {
-        playNote(samplerId, playbackKey, DEFAULT_DURATION_BEATS)
+        await playNote(samplerId, playbackKey, DEFAULT_DURATION_BEATS)
       }
     },
     [containerRef, osmdRef, playNote, measureEventMap, setHighlightedNote]

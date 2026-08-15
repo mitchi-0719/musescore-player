@@ -6,7 +6,10 @@ import { BrowserRouter } from 'react-router-dom'
 import { App } from './App'
 import { appEnvironment } from './config/featureFlags'
 import './globals.css'
+import { configurePlaybackAudioSession } from './lib/audioSession'
 import { logger } from './lib/logger'
+
+configurePlaybackAudioSession()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
