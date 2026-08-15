@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import {
   ActionLink,
   FeatureItem,
-  HowToStep,
   LandingScreenshot,
   MixerSection,
   SectionTitle,
@@ -17,7 +16,7 @@ const features = [
     title: '.msczをそのまま表示',
     text: 'MuseScoreファイルを読み込み、そのまま高精細な楽譜で表示します。',
     imageSrc: '/LP/App.PNG',
-    imagePosition: 'center 32%',
+    imagePosition: 'center 17%',
   },
   {
     number: '02',
@@ -34,17 +33,6 @@ const features = [
     imagePosition: 'center 43%',
   },
 ]
-
-const howToSteps = [
-  ['ファイルを選ぶ', '端末内の.msczを選択', '/LP/Home.PNG', 'center 42%'],
-  ['楽譜が開く', 'すぐに譜面が表示される', '/LP/App.PNG', 'center 30%'],
-  [
-    'タップ・再生して練習',
-    'タップで音を確かめながら練習',
-    '/LP/Select.PNG',
-    'center 47%',
-  ],
-] as const
 
 const containerClass =
   'mx-auto w-[calc(100%-2rem)] max-w-295 md:w-[calc(100%-3rem)]'
@@ -160,23 +148,7 @@ export const LandingPage = () => (
         </p>
       </section>
 
-      <section className={`${containerClass} pt-6 pb-4`}>
-        <SectionTitle>使い方は3ステップ</SectionTitle>
-        <div className="grid gap-6.5 md:grid-cols-3 md:gap-11">
-          {howToSteps.map(([title, text, imageSrc, imagePosition], index) => (
-            <HowToStep
-              key={title}
-              number={index + 1}
-              title={title}
-              text={text}
-              imageSrc={imageSrc}
-              imagePosition={imagePosition}
-            />
-          ))}
-        </div>
-      </section>
-
-      <section className="mx-auto w-[calc(100%-1.5rem)] max-w-295 rounded-md bg-radial from-[#12375b] to-[#061b33] px-3.5 py-6.5 text-center text-white md:w-[calc(100%-3rem)] md:p-7.5">
+      <section className="mx-auto w-full max-w-295 bg-radial from-[#12375b] to-[#061b33] px-3.5 py-6.5 text-center text-white md:w-[calc(100%-3rem)] md:p-7.5">
         <h2 className="mb-3.5 text-[23px] font-extrabold tracking-[0.08em] md:text-[34px]">
           次の音取りを、スマホから。
         </h2>
@@ -192,12 +164,5 @@ export const LandingPage = () => (
         <small>対応形式 .mscz / インストール不要</small>
       </section>
     </main>
-
-    <footer
-      className={`${containerClass} flex flex-wrap gap-7.5 px-2 pt-4.5 pb-6.5 text-[13px] md:gap-17.5`}
-    >
-      <Link to="/">アプリ /</Link>
-      <a href="#about">このアプリについて / about</a>
-    </footer>
   </div>
 )
