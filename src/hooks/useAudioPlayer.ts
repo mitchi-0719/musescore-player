@@ -4,6 +4,7 @@ import type * as ToneModule from 'tone'
 
 import { DRUM_MAP, MIDI_UNPITCHED_TO_KEY } from '../constants/drum'
 import { PIANO_MAP } from '../constants/piano'
+import { configurePlaybackAudioSession } from '../lib/audioSession'
 import { logger } from '../lib/logger'
 import type { NoteEvent, SamplerId, TempoChange } from '../lib/musicXmlParser'
 import { useScoreStore } from '../stores/useScoreStore'
@@ -1016,6 +1017,7 @@ export const useAudioPlayer = (
   }, [isPlaying, options.tempoChanges, scoreTimeline.totalTicks, toneReady])
 
   const play = useCallback(async () => {
+    configurePlaybackAudioSession()
     const Tone = await getTone()
     await Tone.start()
 
@@ -1109,9 +1111,11 @@ export const useAudioPlayer = (
   }, [])
 
   const playNote: PlayNoteFn = useCallback(
-    (samplerId, playbackKey, durationBeats) => {
-      const Tone = _toneModule
-      if (!Tone) return
+    async (samplerId, playbackKey, durationBeats) => {
+      configurePlaybackAudioSession()
+      const Tone = await getTone()
+      await Tone.start()
+
       const sampler = samplers.current[samplerId] ?? samplers.current.piano
       if (!sampler || !sampler.loaded) return
 
@@ -1348,15 +1352,17 @@ export type PlayNoteFn = (
   samplerId: string,
   playbackKey: string | number,
   durationBeats: number
-) => void
+) => Promise<void>
 
 // React 型を使わず構造的に表現
 export const createPlayNote = (samplersRef: {
   current: Record<string, ToneModule.Sampler> | undefined | null
 }): PlayNoteFn => {
-  return (samplerId, playbackKey, durationBeats) => {
-    const Tone = _toneModule
-    if (!Tone) return
+  return async (samplerId, playbackKey, durationBeats) => {
+    configurePlaybackAudioSession()
+    const Tone = await getTone()
+    await Tone.start()
+
     const sampler =
       samplersRef.current?.[samplerId] ?? samplersRef.current?.piano
     if (!sampler || !sampler.loaded) return
