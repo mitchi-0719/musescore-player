@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { useNavigate, useSearchParams } from 'react-router-dom'
+
 import { featureFlags } from '../config/featureFlags'
 import { logger } from '../lib/logger'
 import { convertMsczToMusicXml } from '../lib/msczConverter'
@@ -61,6 +63,8 @@ const getUploadErrorContent = (message: string) => {
 }
 
 export const FileUploader = () => {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [isDragging, setIsDragging] = useState(false)
   const [history, setHistory] = useState<ScoreHistoryItem[]>([])
   const [isHistoryLoading, setIsHistoryLoading] = useState(true)
@@ -69,6 +73,7 @@ export const FileUploader = () => {
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [storageWarning, setStorageWarning] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const hasAutoLoadedDemoRef = useRef(false)
 
   const setConvertedScore = useScoreStore((s) => s.setConvertedScore)
   const setLoading = useScoreStore((s) => s.setLoading)
@@ -350,6 +355,20 @@ export const FileUploader = () => {
       setError(message)
     }
   }, [processFile, setError])
+
+  useEffect(() => {
+    if (
+      !featureFlags.demoButton ||
+      searchParams.get('demo') !== 'true' ||
+      hasAutoLoadedDemoRef.current
+    ) {
+      return
+    }
+
+    hasAutoLoadedDemoRef.current = true
+    navigate('/', { replace: true })
+    void loadDemoFile()
+  }, [loadDemoFile, navigate, searchParams])
 
   return (
     <section className="w-full px-5 pt-9 pb-10 sm:mx-auto sm:mt-10 sm:max-w-2xl sm:rounded-3xl sm:bg-white sm:p-8 sm:shadow-lg">

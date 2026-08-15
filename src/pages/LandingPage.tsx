@@ -9,6 +9,7 @@ import {
   SectionTitle,
 } from '../components/lp/LandingPageComponents'
 import { Icon } from '../components/ui/Icon'
+import { featureFlags } from '../config/featureFlags'
 
 const features = [
   {
@@ -91,9 +92,11 @@ export const LandingPage = () => (
           </p>
           <div className="mt-6 grid max-w-117.5 gap-4 md:mt-9">
             <ActionLink to="/">アプリを開いて試す → /</ActionLink>
-            <ActionLink href="#features" variant="outline">
-              デモ楽譜を見る
-            </ActionLink>
+            {featureFlags.demoButton && (
+              <ActionLink to="/?demo=true" variant="outline">
+                デモ楽譜を見る
+              </ActionLink>
+            )}
           </div>
           <p className="mx-1 mt-7 text-sm text-[#4c5968]">
             <span className="mr-2.5 text-[22px]" aria-hidden="true">
