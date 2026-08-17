@@ -2,6 +2,7 @@
   "name": "refinear",
   "version": "0.0.0",
   "private": true,
+  "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
     "build": "tsc -b && vite build",
@@ -11,6 +12,7 @@
     "fetch_plan": "sh scripts/fetch_plan.sh",
     "format": "prettier --write .",
     "format:check": "prettier . --check",
+    "licenses:generate": "node scripts/generateThirdPartyLicenses.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "prepare": "husky",
